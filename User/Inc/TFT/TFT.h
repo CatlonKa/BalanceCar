@@ -263,6 +263,22 @@ void TFT_Blit1bpp(int16_t x, int16_t y, uint16_t width, uint16_t height,
                    const uint8_t *bitmap, uint16_t stride);
 
 /**
+ * 把 1bpp 位图缩放到指定尺寸后绘制。
+ *
+ * 源格式与 TFT_DrawXBM 相同（行优先、字节内 LSB-first）；scaled_width /
+ * scaled_height 是目标尺寸，(x, y) 是目标矩形的左上角。
+ *
+ * 采用最近邻反向映射：目标像素直接取对应源像素，不做加权。1bpp 只有亮暗
+ * 两种取值，放大时没有灰度可插值，最近邻正是这里想要的效果（几何图标放大
+ * 后边缘依旧锐利）。缩小会丢细节，不适合用作缩略图。
+ *
+ * 缩放的尺寸同样受画布单边上限约束，并只写入当前裁剪窗口之内。
+ */
+void TFT_DrawXBMScale(int16_t x, int16_t y, uint16_t width, uint16_t height,
+                       const uint8_t *bitmap,
+                       uint16_t scaled_width, uint16_t scaled_height);
+
+/**
  * 围绕位图内部锚点旋转后，将该锚点放到画布目标坐标。
  * 角度为顺时针整数角度，采用反向映射和最近邻采样。
  * 宽高服从画布单边上限，锚点必须位于源位图内部，否则无操作。

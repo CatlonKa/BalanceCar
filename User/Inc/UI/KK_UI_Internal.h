@@ -39,6 +39,44 @@
 #define KK_UI_PAGE_PARALLAX       32
 
 /*
+ * 首页竖向轮播的几何。
+ *
+ * 间距同时决定两件事：选中项与相邻项的距离、以及最外两项露出多少。
+ * 以选中项居中、选中放大到 KK_UI_HOME_ICON_FOCUS 为前提，纵坐标是
+ *
+ *     中心 y = CENTER_Y + 偏移 * ITEM_SPACING
+ *     方框   = 中心 y ± 尺寸/2
+ *
+ * 当前取值下的实际排布（CENTER_Y=80，普通 32、选中 64）：
+ *
+ *   偏移  中心 y   图标方框        可见情况
+ *     -2      -8    -24 ..   8     只露下缘 8px
+ *     -1      36     20 ..  52     完整 32
+ *      0      80     48 .. 112     完整 64（选中）
+ *     +1     124    108 .. 140     完整 32
+ *     +2     168    152 .. 184     只露上缘 8px
+ *
+ * 于是选中项与上下相邻项各重叠 4px。想让重叠更少就调大间距，但最外两项
+ * 露出的部分会同步变少；间距到 48 时重叠归零、最外两项也完全滑出屏幕。
+ * 反过来调小间距会让重叠变多。
+ *
+ * 放大项的尺寸和横向位置都随「离选中位的距离」连续变化，所以换项时旧项会
+ * 一边缩小一边向左退回、新项一边放大一边向右靠过来，不需要另一套动画状态：
+ *   选中时：64x64，中心 x = 46（向右靠）
+ *   离一个间距以上：32x32，中心 x = 30
+ * 标签也跟着走：选中时右对齐到屏幕右边，未选中时靠左固定在 TEXT_LEFT。
+ */
+#define KK_UI_HOME_ITEM_SPACING   44  /**< 相邻两项中心 y 的间距，同时决定边缘露出量与重叠量。 */
+#define KK_UI_HOME_CENTER_Y       80  /**< 选中项中心 y（画布纵向正中）。 */
+#define KK_UI_HOME_ICON_SIZE      32  /**< 图标资源的边长（XBM 源尺寸）。 */
+#define KK_UI_HOME_ICON_FOCUS     64  /**< 选中项放大后的边长，取了两倍。 */
+#define KK_UI_HOME_ICON_CENTER_X  30  /**< 未选中项的图标中心 x。 */
+#define KK_UI_HOME_ICON_FOCUS_X   46  /**< 选中项的图标中心 x，向右靠。 */
+#define KK_UI_HOME_TEXT_LEFT      62  /**< 未选中项的标签左边缘 x。 */
+#define KK_UI_HOME_TEXT_RIGHT_GAP 4   /**< 选中项的标签离屏幕右边的留白。 */
+#define KK_UI_HOME_LABEL_HEIGHT   18  /**< 标签行高，反白底的方框高度。 */
+
+/*
  * 弹框纵向基准。
  *
  * 弹框内部坐标在参考布局中都以“打开后盒顶 y = 1”为基准，
@@ -74,11 +112,9 @@ typedef struct {
 } KK_UI_ListAnimation;
 
 typedef struct {
-    int32_t offset_from_q8;
-    int32_t label_from_q8;
-    int32_t label_to_q8;
-    uint32_t started;
-    uint8_t active;
+    int32_t scroll_from_q8; /**< 换项动画的起始滚动位置，单位 Q8 像素。 */
+    uint32_t started;       /**< 动画起点时刻。 */
+    uint8_t active;         /**< 是否正在播放换项动画。 */
 } KK_UI_HomeAnimation;
 
 typedef struct {

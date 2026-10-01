@@ -112,11 +112,92 @@ static bool KK_UI_RawWheelSample(int16_t *left_delta, int16_t *right_delta,
 #error "KK_UI_INPUT_GESTURE_INTERVAL_MS must be greater than KK_UI_INPUT_OK_HOLD_MS"
 #endif
 
+/*
+ * 漏积分的参数合法性：SHIFT 为 0 表示每次把全部累计量削光，等同于禁用累计；
+ * 太大则位移溢出 uint16_t 的除数。
+ */
+#if KK_UI_INPUT_DECAY_SHIFT < 1U || KK_UI_INPUT_DECAY_SHIFT > 14U
+#error "KK_UI_INPUT_DECAY_SHIFT must be in 1..14"
+#endif
+
+#if KK_UI_INPUT_DECAY_PERIOD_MS < 1U
+#error "KK_UI_INPUT_DECAY_PERIOD_MS must be at least 1"
+#endif
+
 static int16_t s_left_accumulator;  /**< 左轮未消化的计数增量。 */
 static int16_t s_right_accumulator; /**< 右轮未消化的计数增量。 */
 static uint32_t s_ok_release_at;    /**< 非 0 表示确定键保持到该时刻后释放。 */
 static uint32_t s_gesture_ready_at; /**< 非 0 表示冷却到该时刻前不再出手势。 */
+static uint32_t s_decay_at;         /**< 上一次漏积分削峰的时刻。 */
 static bool s_back_requested;       /**< 已经识别到一次返回手势。 */
+
+/**
+ * 把一个累计量按比例往零削一步。
+ *
+ * 用指数衰减（按自身比例削）而不是固定速率，是为了与 KK_UI_INPUT_WHEEL_STEPS
+ * 的绝对大小无关：阈值从 300 改成 5500 也不需要重调衰减参数。
+ *
+ * 必须先取绝对值再算步长：C 的整数除法朝零截断，直接用负数去除会得到负的步长
+ * （-100 / 8 == -12），加到负数累计量上反而让它离零更远，变成「越削越大」，
+ * 于是只有一个方向的抖动被抑制住，另一个方向完全失效。
+ */
+static int16_t kk_ui_input_decay_step(int16_t value, int32_t divisor)
+{
+    int32_t magnitude; /* 累计量的绝对值，后续都在正数上运算。 */
+    int32_t step;
+
+    if (value == 0) {
+        return 0;
+    }
+    magnitude = (value < 0) ? -(int32_t)value : (int32_t)value;
+    step = magnitude / divisor;
+    if (step == 0) {
+        /* 数值很小的时候整数除法会算成 0，那样永远削不到底，所以至少削 1。 */
+        step = 1;
+    }
+    magnitude -= step;
+    if (magnitude < 0) {
+        magnitude = 0;
+    }
+    return (value < 0) ? (int16_t)(-magnitude) : (int16_t)magnitude;
+}
+
+/**
+ * 按经过的时间给两个累计量做漏积分。
+ *
+ * 以毫秒而不是调用次数计时：主循环节奏会变（界面忙的时候调用间隔不一样），
+ * 按次数计的话削峰速度会跟着主循环负载漂移。
+ */
+static void kk_ui_input_decay(uint32_t now_ms)
+{
+    /* 补偿周期数的上限：循环被长时间拖住（例如上电初始化）时没必要真的补几百次。 */
+    const uint32_t max_periods = 64U;
+    const int32_t divisor = (int32_t)1 << KK_UI_INPUT_DECAY_SHIFT;
+    uint32_t elapsed;
+    uint32_t periods;
+    uint32_t i;
+
+    if (s_decay_at == 0U) {
+        /* 第一次调用（或刚复位）：只记下起点，本轮不削。 */
+        s_decay_at = now_ms;
+        return;
+    }
+    elapsed = now_ms - s_decay_at;
+    if (elapsed < KK_UI_INPUT_DECAY_PERIOD_MS) {
+        return;
+    }
+    periods = elapsed / KK_UI_INPUT_DECAY_PERIOD_MS;
+    /* 只推进整数个周期，余下的零头留到下一轮，避免主循环变快时削峰也变快。 */
+    s_decay_at += periods * KK_UI_INPUT_DECAY_PERIOD_MS;
+    if (periods > max_periods) {
+        periods = max_periods;
+    }
+
+    for (i = 0U; i < periods; ++i) {
+        s_left_accumulator = kk_ui_input_decay_step(s_left_accumulator, divisor);
+        s_right_accumulator = kk_ui_input_decay_step(s_right_accumulator, divisor);
+    }
+}
 
 void KK_UI_InputReset(void)
 {
@@ -124,6 +205,7 @@ void KK_UI_InputReset(void)
     s_right_accumulator = 0;
     s_ok_release_at = 0U;
     s_gesture_ready_at = 0U;
+    s_decay_at = 0U;
     s_back_requested = false;
 }
 
@@ -148,6 +230,12 @@ KK_UI_Input KK_UI_InputRead(uint32_t now_ms)
         s_left_accumulator += left_delta;
         s_right_accumulator += right_delta;
     }
+
+    /*
+     * 漏积分要在判断阈值之前做：这样「转得慢」的输入会先被削掉一部分，
+     * 涨不到阈值；只有转得足够快、补充速度超过削峰速度时才可能触发。
+     */
+    kk_ui_input_decay(now_ms);
 
     /*
      * 冷却期：上一次手势之后 KK_UI_INPUT_GESTURE_INTERVAL_MS 内不再产生新手势。

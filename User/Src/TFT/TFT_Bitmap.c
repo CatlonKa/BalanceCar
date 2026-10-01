@@ -133,6 +133,48 @@ void TFT_Blit1bpp(int16_t x, int16_t y, uint16_t width, uint16_t height,
     }
 }
 
+void TFT_DrawXBMScale(int16_t x, int16_t y, uint16_t width, uint16_t height,
+                       const uint8_t *bitmap,
+                       uint16_t scaled_width, uint16_t scaled_height)
+{
+    int32_t visible_x0 = x;                           /* 裁剪后的目标左边界。 */
+    int32_t visible_y0 = y;                           /* 裁剪后的目标首行。 */
+    int32_t visible_x1 = (int32_t)x + scaled_width;   /* 裁剪后的目标右边界。 */
+    int32_t visible_y1 = (int32_t)y + scaled_height;  /* 裁剪后的目标末行。 */
+    uint16_t source_stride;                           /* 源位图每行字节数。 */
+    int32_t destination_y;
+
+    if (bitmap == NULL || width == 0U || height == 0U ||
+        scaled_width == 0U || scaled_height == 0U) {
+        return;
+    }
+    if (!tft_bitmap_size_valid(scaled_width, scaled_height) ||
+        !TFT_InternalIntersectClip(&visible_x0, &visible_y0,
+                                    &visible_x1, &visible_y1)) {
+        return;
+    }
+    source_stride = (uint16_t)((width + 7U) >> 3U);
+
+    /* 反向映射：目标像素按比例回查源像素，保证每个目标点只写一次。 */
+    for (destination_y = visible_y0; destination_y < visible_y1; ++destination_y) {
+        uint32_t source_y = (uint32_t)(destination_y - y) * height /
+                            scaled_height;
+        const uint8_t *line = bitmap + (uint32_t)source_y * source_stride;
+        int32_t destination_x;
+
+        for (destination_x = visible_x0; destination_x < visible_x1;
+             ++destination_x) {
+            uint32_t source_x = (uint32_t)(destination_x - x) * width /
+                                scaled_width;
+            bool source_pixel = (line[source_x >> 3U] &
+                                 (uint8_t)(1U << (source_x & 7U))) != 0U;
+
+            TFT_InternalPlotSource((int16_t)destination_x,
+                                    (int16_t)destination_y, source_pixel);
+        }
+    }
+}
+
 /** 将 Q15 乘加结果按最近邻规则还原为整数坐标。 */
 static int32_t tft_q15_round(int32_t value)
 {

@@ -76,8 +76,6 @@ cmake/                 工具链与 CubeMX 的 CMake 片段
 - DCMI + OV7725 已初始化，尚未开始采集
 - ESP32 链路（SPI2）未启用
 
-待办与需求见 `MOTOR_UI_TODO.md`。
-
 ## 许可证
 
 项目本体采用 **[PolyForm Noncommercial License 1.0.0](LICENSE.txt)**。
