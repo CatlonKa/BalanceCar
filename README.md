@@ -40,7 +40,7 @@ cmake --build build/Debug
 
 当前占用：**Flash 74,916 B / RAM 11,520 B**。
 
-> 注意：工程链接的是 newlib-nano，**它的 `printf` 不支持 `%f`**（要支持会多占约 15 KB Flash）。
+> 注意：工程链接的是 newlib-nano，**它的 `printf` 不支持 `%f`**
 > 因此浮点一律换算成整数再打印，例如电压用毫伏。
 
 ## 目录结构
@@ -78,7 +78,21 @@ cmake/                 工具链与 CubeMX 的 CMake 片段
 
 待办与需求见 `MOTOR_UI_TODO.md`。
 
-## 第三方
+## 许可证
 
-`Drivers/` 下为 ST 官方 HAL 与 CMSIS（各自保留原许可证）。
-`User/Inc/TFT/TFT_LICENSE.txt`、`User/Inc/UI/KK_UI_LICENSE.txt` 对应各自的运行库来源。
+项目本体采用 **[PolyForm Noncommercial License 1.0.0](LICENSE.txt)**。
+
+**可以**：任意非商业用途，包括个人学习、研究、实验、业余爱好项目，
+以及学校、科研机构、公益组织等的使用。可以自由修改、分发。
+
+**不可以**：任何带商业预期的用途（用于产品、对外提供服务、公司内部项目等）。
+
+分发时必须附带本许可证与上面的 `Required Notice` 行。
+
+> 严格来说这属于「源码可见」（source-available），而不是 OSI 定义的「开源」——
+> OSI 要求许可证不得限制使用领域。这不影响你按上面的范围使用。
+
+`Drivers/` 下的 ST 官方 HAL 与 CMSIS 保留各自的原许可证（BSD-3-Clause / Apache-2.0），
+不受本项目许可证影响。`User/Inc/TFT/TFT_LICENSE.txt`、`User/Inc/UI/KK_UI_LICENSE.txt`
+对应各自的运行库来源（均为 MIT）。
+
