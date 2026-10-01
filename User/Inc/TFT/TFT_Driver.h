@@ -16,11 +16,14 @@
 TFT_Status TFT_DriverInit(void);
 
 /**
- * 丢弃驱动状态，屏幕已经断电或被拔掉时使用。
+ * 关闭屏幕并丢弃驱动状态。
  *
- * 与 TFT_DriverInit() 不同，本函数不向 SPI 发任何命令、不等异步传输结束，
- * 只把本地状态和背光恢复成“没有屏幕”的样子，保证下一次 TFT_DriverInit()
- * 可以从确定状态重新开始。
+ * 除了清本地状态、停背光，还会关显示并让面板进睡眠（DISPOFF + SLPIN），
+ * 所以屏幕即使一直插着也会明确黑掉，不用拔线就能分清运动状态和 UI 状态。
+ * 对已经断电的屏幕发命令同样安全，不会失败。
+ *
+ * 与 TFT_DriverInit() 不同，本函数不等异步传输结束；若调用时正在传输，
+ * 则只关背光、跳过命令（避免把总线上的页数据穿插成乱码）。
  */
 void TFT_DriverDeInit(void);
 
@@ -32,6 +35,23 @@ TFT_Status TFT_DriverWriteIT(void);
 
 /** 使用中断发送寻址命令、DMA 发送页数据。 */
 TFT_Status TFT_DriverWriteDMA(void);
+
+/**
+ * 把一块 RGB565 图像直接写进面板，绕过 1bpp 帧缓冲。
+ *
+ * rgb565 是行优先、每像素两字节、**高字节在前**（与 ST7735S 线上顺序一致），
+ * 所以数据可以从 Flash 直接送到 SPI，既不需要解包也不需要 RAM 中转。
+ * 这与帧缓冲里的 1bpp 页式数据完全不同，是给开机图、摄像头这类
+ * 「不由图形核心生成」的图像用的通路。
+ *
+ * (x, y) 以面板可见区左上角为原点，是**物理坐标，不受画布旋转影响**。
+ * 矩形必须完整落在可见区内，越界返回 TFT_UNSUPPORTED。
+ *
+ * 全程阻塞。内部按行分块发送，以绕开单次传输长度是 uint16_t 的限制，
+ * 所以整屏（128 x 160 x 2 = 40960 字节）也能一次写完。期间片选保持有效。
+ */
+TFT_Status TFT_DriverDirectBlit(int16_t x, int16_t y, uint16_t width, uint16_t height,
+                                const uint8_t *rgb565);
 
 /** 查询驱动异步状态机是否正在传输。 */
 bool TFT_DriverIsBusy(void);

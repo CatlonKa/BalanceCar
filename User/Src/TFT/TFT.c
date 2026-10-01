@@ -315,8 +315,8 @@ TFT_Status TFT_Init(void)
 void TFT_DeInit(void)
 {
     /*
-     * 屏幕已经不在（拔掉或断电），先把驱动层收干净：它会停背光 PWM，
-     * 但不会向 SPI 发任何命令。
+     * 先让驱动层收干净：它会把背光关掉，并在总线空闲时发 DISPOFF + SLPIN，
+     * 让还插着的屏幕立刻黑掉；屏幕已被拔掉时也无害。
      */
     TFT_DriverDeInit();
 
@@ -344,6 +344,33 @@ void TFT_DeInit(void)
 TFT_Status TFT_Update(void)
 {
     return tft_begin_update(TFT_UPDATE_BLOCKING);
+}
+
+TFT_Status TFT_DirectBlit(int16_t x, int16_t y, uint16_t width, uint16_t height,
+                          const uint8_t *rgb565)
+{
+    TFT_Status status;
+
+    /* 面板必须先初始化过，否则连显示都没打开，写了也看不见。 */
+    if (!tft_initialized) {
+        tft_last_status = TFT_ERROR;
+        return TFT_ERROR;
+    }
+    if (TFT_IsBusy()) {
+        tft_last_status = TFT_BUSY;
+        return TFT_BUSY;
+    }
+
+    status = TFT_DriverDirectBlit(x, y, width, height, rgb565);
+    if (status == TFT_OK) {
+        /*
+         * 面板内容已经和 tft_buffers 不一致了：这份图像不在帧缓冲里，
+         * 逐字节比较再也算不出正确差异，所以下一次正常刷新必须整屏重发。
+         */
+        tft_force_full = true;
+    }
+    tft_last_status = status;
+    return status;
 }
 
 TFT_Status TFT_UpdateIT(void)

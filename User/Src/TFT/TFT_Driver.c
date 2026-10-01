@@ -20,6 +20,7 @@
 #define TFT_CMD_SLPOUT  0x11U /**< 退出睡眠模式。 */
 #define TFT_CMD_NORON   0x13U /**< 进入正常显示模式。 */
 #define TFT_CMD_INVOFF  0x20U /**< 关闭显示反显。 */
+#define TFT_CMD_DISPOFF 0x28U /**< 关闭显示（面板停止扫描）。 */
 #define TFT_CMD_DISPON  0x29U /**< 打开显示。 */
 #define TFT_CMD_CASET   0x2AU /**< 设置列地址窗口。 */
 #define TFT_CMD_RASET   0x2BU /**< 设置行地址窗口。 */
@@ -166,6 +167,11 @@ static void tft_set_dc(bool is_data)
  *   引脚高电平占比 = (Period − CCR) / Period
  * 所以「越亮」对应 CCR 越小。这一层反相已经在下面换算掉了，
  * 调用方只需要给直觉上的 0~100。
+ *
+ * ⚠️ 推论（很容易踩）：因为反相，**输出被禁用时引脚会变高**，也就是背光最亮。
+ * 所以关背光只能靠「CCR = Period」（OCxREF 恒 1 → 引脚恒 0），
+ * 不能用 HAL_TIMEx_PWMN_Stop() / 清 MOE 这类「禁用输出」的做法，
+ * 也不能只靠电平判断“低就是灭”。
  */
 static void tft_backlight_write_level(uint8_t level)
 {
@@ -193,7 +199,7 @@ static void tft_backlight_write(bool enable)
     tft_backlight_write_level(enable ? (uint8_t)TFT_BACKLIGHT_LEVEL_MAX : 0U);
 }
 
-/** 启动背光 PWM。 */
+/** 启动背光 PWM 并确保输出受我们控制。 */
 static void tft_backlight_start(void)
 {
     /*
@@ -201,6 +207,11 @@ static void tft_backlight_start(void)
      * HAL_TIM_PWM_Start() 只开 CC3E（主通道，PB1 没引出），
      * 而 HAL_TIMEx_PWMN_Start() 会开 CC3NE 并置位 MOE 主输出使能。
      * 缺了 MOE，引脚不会输出任何波形。
+     *
+     * ⚠️ 本函数必须与「把比较值设成 0 亮度」配合使用，**绝不能用
+     * HAL_TIMEx_PWMN_Stop() 来关背光**，原因见 tft_backlight_write_level()
+     * 和 TFT_DriverDeInit() 的注释：停掉通道会把 PB1 拉到高电平，
+     * 那是背光最亮，而不是熄灭。
      */
     (void)HAL_TIMEx_PWMN_Start(&htim8, TIM_CHANNEL_3);
 }
@@ -236,8 +247,10 @@ static HAL_StatusTypeDef tft_write_simple_command_blocking(uint8_t command)
 /** 硬件复位；ST7735S 的 RESX 为低电平有效。 */
 static void tft_hardware_reset(void)
 {
+    /* datasheet 只要求低电平保持 10 us 以上；2 ms 已留了三个数量级余量。 */
     HAL_GPIO_WritePin(TFT_RST_GPIO_Port, TFT_RST_Pin, GPIO_PIN_RESET);
-    HAL_Delay(20U);
+    HAL_Delay(2U);
+    /* 拉高后的等待不能省：内部稳压器要留时间稳定，datasheet 要求 >= 120 ms。 */
     HAL_GPIO_WritePin(TFT_RST_GPIO_Port, TFT_RST_Pin, GPIO_PIN_SET);
     HAL_Delay(120U);
 }
@@ -492,20 +505,55 @@ static void tft_finish_async(TFT_Status status)
 /* ------------------------------------------------------------ 对外接口 ---- */
 
 /**
- * 丢弃驱动状态：屏幕已经断电或被拔掉，这里只清理本地状态。
+ * 关闭屏幕并丢弃驱动状态。
  *
- * 刻意不做两件事：
- *   不向 SPI 发任何命令（ST7735S 已经没电，命令送不到）
- *   不等异步传输结束（主机发数据不依赖从机，等它没有意义）
- * 但背光 PWM 必须停：屏幕都不在，继续输出只是在空转。
+ * 使用场景是「车轮交回电机」，但只要屏幕还插着，我们也希望它明确黑掉：
+ * 不拔线就能一眼分清当前是运动状态还是 UI 状态。
+ * 所以这里会关背光、关显示并让面板进睡眠，把画面内容也丢掉。
+ *
+ * 发命令是安全的：屏幕真被拔掉时主机侧 SPI 对着空气发送依然返回 HAL_OK，
+ * 从机在不在都不影响主机完成传输。唯一要避开的是自己正在异步传输的时刻——
+ * 那时总线上有页数据，穿插命令会把两者都搞成乱码，所以改为只关背光。
+ *
+ * 刻意不等异步传输结束：主机发数据不依赖从机，等它没有意义。
  * 还留在路上的数据不会送到任何地方，其完成回调只会再写一遍下面的静态状态，
  * 不会越界，所以强行复位是安全的。
  */
 void TFT_DriverDeInit(void)
 {
-    (void)HAL_TIMEx_PWMN_Stop(&htim8, TIM_CHANNEL_3);
+    bool was_busy = tft_driver_busy;
+
+    /*
+     * 关背光。
+     *
+     * ⚠️ 这里绝对不能调 HAL_TIMEx_PWMN_Stop()。PB1 是 TIM8_CH3N 互补输出，
+     * CubeMX 把 OCNPolarity 配成 LOW（低有效），所以引脚的**无效电平是高**。
+     * Stop 会清 CC3NE、清 MOE 并停计数器，引脚随即升到高电平——
+     * 那等于背光全亮：之前看似正常只是因为面板还在扫描黑底界面，
+     * 一旦面板进睡眠（像素驱动电压被拿掉），这类 TN 屏无电压时是透光的，
+     * 背光透过来整块屏就是全白。
+     *
+     * 正确做法是让通道继续工作，把比较值设成 0 亮度：OC3REF 恒为 1，
+     * 经低有效反相后引脚恒为 0，背光才真正熄灭。
+     * 所以这里先确保输出已经在工作（重复调用无副作用），再写 0 亮度。
+     */
+    tft_backlight_start();
     tft_backlight_write(false);
-    tft_deselect();
+
+    if (!was_busy)
+    {
+        /*
+         * 屏幕可能还有电，让它进睡眠。
+         *
+         * 先关显示再睡眠：DISPOFF 让面板立刻停止扫描，避免睡眠过程留下残影。
+         * 两条命令都不需要读回，所以屏幕没接时也不会出错。
+         */
+        tft_select();
+        (void)tft_write_simple_command_blocking(TFT_CMD_DISPOFF);
+        (void)tft_write_simple_command_blocking(TFT_CMD_SLPIN);
+        tft_deselect();
+    }
+    /* 正在传输时 CS 由这条传输持有，不能动，也不插命令。 */
 
     tft_driver_busy = false;
     tft_driver_mode = TFT_DRIVER_MODE_NONE;
@@ -531,19 +579,28 @@ TFT_Status TFT_DriverInit(void)
     tft_driver_segment_count = 0U;
     tft_driver_segment_index = 0U;
 
+/*
+ * 初始化延时都取 datasheet 的最小要求 + 余量。这几个值直接决定
+ * 「按 KEY0 停车后要等多久才看到界面」，所以不要随手加大。
+ * 实测这里一次约 380 ms（含后面清屏的 SPI 传输）。
+ */
+
     /* 初始化期间先关背光，避免用户看到上电随机内容。 */
     tft_backlight_start();
     tft_backlight_write(false);
-    HAL_Delay(10U);
+    /* 关背光到复位之间不需要长延时，2 ms 只是让电平稳定。 */
+    HAL_Delay(2U);
     tft_hardware_reset();
 
     tft_select();
 
-    /* 复位和退出睡眠的等待时间较长，单独发送。 */
+    /* 复位和退出睡眠的等待时间最长，单独发送。 */
     hal_status = tft_write_simple_command_blocking(TFT_CMD_SWRESET);
-    HAL_Delay(150U);
+    /* SWRESET 需要 120 ms 才能完成，取 130 留余量。 */
+    HAL_Delay(130U);
     if (hal_status == HAL_OK) {
         hal_status = tft_write_simple_command_blocking(TFT_CMD_SLPOUT);
+        /* SLPOUT 同样需要 120 ms。 */
         HAL_Delay(120U);
     }
 
@@ -565,7 +622,10 @@ TFT_Status TFT_DriverInit(void)
     }
     if (hal_status == HAL_OK) {
         hal_status = tft_write_simple_command_blocking(TFT_CMD_DISPON);
-        HAL_Delay(100U);
+        /*
+         * 这里刻意不等：DISPON 只是让面板开始扇描，ram 里的内容已经写好了，
+         * 不需要等它“稳定”再收尾。原来等了 100 ms，是白白拖慢停车。
+         */
     }
 
     tft_deselect();
@@ -613,6 +673,67 @@ TFT_Status TFT_DriverWriteIT(void)
 TFT_Status TFT_DriverWriteDMA(void)
 {
     return tft_start_async(TFT_DRIVER_MODE_DMA);
+}
+
+/**
+ * 把一块 RGB565 图像直接写进面板，绕过 1bpp 帧缓冲。
+ *
+ * 数据格式就是面板线上格式：行优先、每像素两字节、高字节在前。所以整块数据
+ * 可以从 Flash 原样段发给 SPI，不需要解包也不需要拷贝到 RAM。
+ *
+ * 单次传输长度是 uint16_t，而整屏有 40960 字节，所以这里按行分块：
+ * 每次只设一块行窗口就立刻写掉，块与块之间共用同一次片选。
+ * 这样既不受长度限制，也不需要额外的 RAM 缓冲。
+ */
+TFT_Status TFT_DriverDirectBlit(int16_t x, int16_t y, uint16_t width, uint16_t height,
+                                const uint8_t *rgb565)
+{
+    const uint32_t chunk_limit = 8192U; /* 单块最大字节数，远小于 uint16_t 上限。 */
+    uint32_t row_bytes;                 /* 每一行占用的字节数。 */
+    uint16_t rows_per_chunk;            /* 每块发送的行数。 */
+    uint16_t row;
+    HAL_StatusTypeDef hal_status = HAL_OK;
+
+    if (tft_driver_busy) {
+        return TFT_BUSY;
+    }
+    if (rgb565 == NULL || width == 0U || height == 0U) {
+        return TFT_ERROR;
+    }
+    /* 坐标以可见区左上角为原点，且必须整块落在屏幕内。 */
+    if (x < 0 || y < 0 ||
+        (int32_t)x + (int32_t)width > (int32_t)TFT_PHYSICAL_WIDTH ||
+        (int32_t)y + (int32_t)height > (int32_t)TFT_PHYSICAL_HEIGHT) {
+        return TFT_UNSUPPORTED;
+    }
+
+    row_bytes = (uint32_t)width * 2U;
+    rows_per_chunk = (uint16_t)(chunk_limit / row_bytes);
+    if (rows_per_chunk == 0U) {
+        /* 单行就已经超过 chunk_limit，那就一行一块。 */
+        rows_per_chunk = 1U;
+    }
+
+    tft_driver_busy = true;
+    tft_driver_mode = TFT_DRIVER_MODE_NONE;
+    tft_select();
+
+    for (row = 0U; row < height && hal_status == HAL_OK; row = (uint16_t)(row + rows_per_chunk)) {
+        uint16_t remaining = (uint16_t)(height - row);
+        uint16_t chunk_rows = (rows_per_chunk < remaining) ? rows_per_chunk : remaining;
+
+        hal_status = tft_write_window_blocking(
+            (uint16_t)x + TFT_GRAM_COLUMN_OFFSET,
+            (uint16_t)(x + width - 1) + TFT_GRAM_COLUMN_OFFSET,
+            (uint16_t)(y + row) + TFT_GRAM_ROW_OFFSET,
+            (uint16_t)(y + row + chunk_rows - 1) + TFT_GRAM_ROW_OFFSET,
+            rgb565 + (uint32_t)row * row_bytes,
+            (uint16_t)((uint32_t)chunk_rows * row_bytes));
+    }
+
+    tft_deselect();
+    tft_driver_busy = false;
+    return tft_map_hal_status(hal_status);
 }
 
 bool TFT_DriverIsBusy(void)

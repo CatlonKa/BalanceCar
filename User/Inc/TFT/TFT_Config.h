@@ -40,11 +40,20 @@
 /*
  * 0x36 Memory Access Control：bit7 MY、bit6 MX、bit5 MV、bit3 BGR。
  *
- * 0xC8 = MY | MX | BGR，已在本模组上实物验证方向与红蓝顺序均正确。
+ * 0xC0 = MY | MX（不带 BGR）。
+ *
+ * ⚠️ bit3 是 2026-10-02 才真正定下的，别再照旧注释里的“已验证”去改：
+ * 在那之前屏幕只有黑白两色（TFT_COLOR_FOREGROUND/BACKGROUND），而黑白下
+ * R=G=B，BGR 位**完全没有可见影响**，所以当时根本验不出来。
+ * 第一次上彩色图（开机图）就暴露了：红色整体偏蓝，正是 R/B 互换的典型症状。
+ *
+ * bit3 = 1 表示“先 R 后 B”，0 表示“先 B 后 R”。若以后换模组后发现
+ * 红蓝又反了，改这一位即可（0xC0 <-> 0xC8）。
+ *
  * MY 与 MX 同时置位等价于整体旋转 180°，属于纯旋转，用 TFT_SetRotation()
- * 就能纠回正方向；若红蓝互换，把 bit3 清掉改成 0xC0。
+ * 就能纠回正方向，与本宏无关。
  */
-#define TFT_MADCTL_VALUE 0xC8U
+#define TFT_MADCTL_VALUE 0xC0U
 
 /** 0x3A Pixel Format Set 的 RGB565 编码。 */
 #define TFT_COLMOD_VALUE 0x05U

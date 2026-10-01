@@ -6,6 +6,7 @@
 #include "KK_UI_FontZh16.h"
 
 #include "TFT.h"
+#include "TFT_BootSplash.h"
 #include "main.h"
 
 /*
@@ -14,11 +15,12 @@
  * 这一层只描述页面、绑定和业务事件，并把刷新所有权完全交给 KK_UI：
  * 这里不调用 TFT_Clear()，也不调用任何 TFT_Update*()。
  *
- * 页面拓扑（共 4 页）：
- *   1 首页（HOME）  -> 三个图标入口
+ * 页面拓扑（共 5 页）：
+ *   1 首页（HOME）  -> 四个图标入口
  *   2 菜单（MENU）  -> 蜂鸣器开关 / 限速整数 / 重置确认
  *   3 状态（INFO）  -> 只读信息行
  *   4 波形（CUSTOM）-> 全屏自定义页
+ *   5 图片（CUSTOM）-> 全屏彩色直推页
  */
 
 /* --------------------------------------------------------------- 页面编号 ---- */
@@ -27,7 +29,8 @@ enum {
     KK_UI_APP_PAGE_HOME = 1, /**< 首页，同时也是根页面。 */
     KK_UI_APP_PAGE_MENU,     /**< 普通菜单页。 */
     KK_UI_APP_PAGE_STATUS,   /**< 只读信息页。 */
-    KK_UI_APP_PAGE_WAVE      /**< 波形全屏自定义页。 */
+    KK_UI_APP_PAGE_WAVE,     /**< 波形全屏自定义页。 */
+    KK_UI_APP_PAGE_IMAGE     /**< 图片全屏自定义页（彩色直推）。 */
 };
 
 /* --------------------------------------------------------------- 展示状态 ---- */
@@ -47,7 +50,8 @@ static const KK_UI_PageRoute s_routes[] = {
     { KK_UI_PAGE_HOME, 0U },   /* 页面 1：首页表下标 0。 */
     { KK_UI_PAGE_MENU, 0U },   /* 页面 2：菜单表下标 0。 */
     { KK_UI_PAGE_INFO, 0U },   /* 页面 3：信息表下标 0。 */
-    { KK_UI_PAGE_CUSTOM, 0U }  /* 页面 4：自定义页下标 0。 */
+    { KK_UI_PAGE_CUSTOM, 0U }, /* 页面 4：自定义页下标 0（波形）。 */
+    { KK_UI_PAGE_CUSTOM, 1U }  /* 页面 5：自定义页下标 1（图片）。 */
 };
 
 /* ------------------------------------------------------------------ 首页 ---- */
@@ -55,11 +59,12 @@ static const KK_UI_PageRoute s_routes[] = {
 static const KK_UI_HomeItem s_home_items[] = {
     { "菜单", kk_ui_icon_menu, KK_UI_APP_PAGE_MENU },
     { "状态", kk_ui_icon_status, KK_UI_APP_PAGE_STATUS },
-    { "波形", kk_ui_icon_wave, KK_UI_APP_PAGE_WAVE }
+    { "波形", kk_ui_icon_wave, KK_UI_APP_PAGE_WAVE },
+    { "图片", kk_ui_icon_image, KK_UI_APP_PAGE_IMAGE }
 };
 
 static const KK_UI_HomePage s_home_pages[] = {
-    { s_home_items, 3U }
+    { s_home_items, 4U }
 };
 
 /* ------------------------------------------------------------------ 菜单 ---- */
@@ -142,7 +147,7 @@ static const KK_UI_App s_app = {
     .menu_page_count = sizeof(s_menu_pages) / sizeof(s_menu_pages[0]),
     .info_pages = s_info_pages,
     .info_page_count = sizeof(s_info_pages) / sizeof(s_info_pages[0]),
-    .custom_page_count = 1U,
+    .custom_page_count = 2U,
     .int_bindings = s_int_bindings,
     .int_binding_count = sizeof(s_int_bindings) / sizeof(s_int_bindings[0]),
     .bool_bindings = s_bool_bindings,
@@ -256,9 +261,70 @@ static void kk_ui_wave_invalidate_plot(void)
 #endif
 }
 
+/* -------------------------------------------------------------- 图片自定义页 ---- */
+
+/*
+ * 图片页的当前索引与「待推送」标志。
+ *
+ * 图片是 RGB565 整屏彩色，核心的 1bpp 帧缓冲表达不了，所以这一页走
+ * KK_UI_SetDirectFrame(true) 让核心放手，再由这里自己推给面板。
+ * 也正因为核心不参与，切图片不需要让核心变脏，只要重推一次。
+ */
+static uint8_t s_image_index;
+static bool s_image_pending;   /**< 需要（重新）把 s_image_index 推上屏。 */
+
+/** 把当前图片推上屏；面板正忙（上一帧还在发）时保留 pending，下一轮再试。 */
+static void kk_ui_image_flush(void)
+{
+    if (!s_image_pending) {
+        return;
+    }
+    if (TFT_BootSplashShow(s_image_index) == TFT_OK) {
+        s_image_pending = false;
+    }
+}
+
+/** 按 steps 切图片，**循环**：越过两端回到另一端。 */
+static void kk_ui_image_step(int16_t steps)
+{
+    int16_t count = (int16_t)TFT_BOOT_SPLASH_COUNT;
+    int16_t next;
+
+    if (count <= 0 || steps == 0) {
+        return;
+    }
+
+    /* 先取模再补回正数：C 的 % 对负数得负结果，直接拿去索引会越界。 */
+    next = (int16_t)(((int16_t)s_image_index + steps) % count);
+    if (next < 0) {
+        next = (int16_t)(next + count);
+    }
+
+    if (next != (int16_t)s_image_index) {
+        s_image_index = (uint8_t)next;
+        s_image_pending = true;
+    }
+}
+
 void KK_UI_CustomOnEnter(KK_UI_PageId page)
 {
     uint16_t i;
+
+    if (page == KK_UI_APP_PAGE_IMAGE) {
+        /*
+         * 让核心放手：它的帧缓冲只有黑白两色，画不出彩色照片，
+         * 而且它每次绘制都会把刚推上去的图片覆盖掉。
+         */
+        KK_UI_SetDirectFrame(true);
+        s_image_pending = true;
+        /*
+         * 立刻试一次：切页动画期间核心不会调 KK_UI_CustomOnTick()，
+         * 不在这里试的话动画那几百毫秒屏幕上还是上一页的旧画面。
+         * 推不上去（面板正忙）就交给 Tick 重试。
+         */
+        kk_ui_image_flush();
+        return;
+    }
 
     if (page != KK_UI_APP_PAGE_WAVE) {
         return;
@@ -274,11 +340,34 @@ void KK_UI_CustomOnEnter(KK_UI_PageId page)
 void KK_UI_CustomOnLeave(KK_UI_PageId page)
 {
     /* 波形页没有需要释放的资源。 */
-    (void)page;
+    if (page == KK_UI_APP_PAGE_IMAGE) {
+        /*
+         * 交回核心：它内部会强制整屏重画（屏幕内容已被我们改过，
+         * 帧缓冲里的差异算不出正确结果），所以这里不需额外处理。
+         */
+        KK_UI_SetDirectFrame(false);
+        s_image_pending = false;
+    }
 }
 
 void KK_UI_CustomOnInput(KK_UI_PageId page, KK_UI_InputEvent event)
 {
+    if (page == KK_UI_APP_PAGE_IMAGE) {
+        /*
+         * 上/下拨轮和确定键都是「下一张」，方向与首页轮播保持一致的手感
+         * （首页也是拨动切内容）。**循环**：到末尾继续拨会回到第一张，
+         * 所以一直往下滑能一直切换。
+         */
+        if (event.action == KK_UI_INPUT_UP || event.action == KK_UI_INPUT_OK) {
+            kk_ui_image_step((int16_t)event.steps);
+        } else if (event.action == KK_UI_INPUT_DOWN) {
+            kk_ui_image_step((int16_t)(-(int16_t)event.steps));
+        }
+        /* 立刻推一次手感更跟手；推不上去则由 Tick 补。 */
+        kk_ui_image_flush();
+        return;
+    }
+
     if (page != KK_UI_APP_PAGE_WAVE) {
         return;
     }
@@ -306,6 +395,15 @@ bool KK_UI_CustomOnTick(KK_UI_PageId page, uint32_t now_ms)
 {
     uint32_t missed;
     uint32_t count;
+
+    if (page == KK_UI_APP_PAGE_IMAGE) {
+        kk_ui_image_flush();
+        /*
+         * 返回 false：屏幕内容归这一页自己管，不需要核心变脏重绘。
+         * 返回 true 会让核心置脏，反而去重画黑白界面把图片盖掉。
+         */
+        return false;
+    }
 
     if (page != KK_UI_APP_PAGE_WAVE) {
         return false;
@@ -340,6 +438,14 @@ void KK_UI_CustomOnDraw(KK_UI_PageId page, int16_t x_offset, int16_t clip_x,
     /* 核心是否正在做局部重绘（是则裁剪窗口已由核心按脏矩形设好）。 */
     bool partial = KK_UI_GetDirtyRect(NULL, NULL, NULL, NULL);
     uint16_t i;
+
+    if (page == KK_UI_APP_PAGE_IMAGE) {
+        /*
+         * 直推模式下核心不会调本函数；真被调到也不该画任何东西，
+         * 否则会把刚推上去的图片覆盖成黑白界面。
+         */
+        return;
+    }
 
     if (page != KK_UI_APP_PAGE_WAVE) {
         return;

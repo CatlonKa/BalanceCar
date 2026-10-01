@@ -46,6 +46,18 @@ Drivers/CMSIS/Device/ST/STM32F4xx/Source/Templates/iar/
 # 所以保留在本地但不入库。
 TFT_Resources/kk_oled/
 
+# ---- 素材与工具（都不参与编译烧录）----
+# TFT_Resources 下**没有任何文件进构建**：CMakeLists.txt 的源文件全在 User/ 下，
+# 包含路径也只有 User/Inc、User/Inc/TFT、User/Inc/UI。
+# 这里放的是取模/转换脚本、图片原图与预览、以及字模归档副本，
+# 属于本机的制作过程产物，没有必要随固件源码上传，所以整个目录不入库。
+#
+# 真正参与编译的对应文件都在 User/ 下，不受影响：
+#   开机图数据  User/Src/TFT/TFT_BootSplashData.c
+#   当前字模    User/Src/UI/KK_UI_FontZh16.c
+# 需要对某个文件入库时用 git add -f 单独加回来。
+TFT_Resources/
+
 # ---- 操作系统 ----
 Thumbs.db
 ehthumbs.db

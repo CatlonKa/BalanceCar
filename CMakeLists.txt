@@ -62,6 +62,8 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     User/Src/TFT/TFT_Driver.c
     User/Src/TFT/TFT_App.c
     User/Src/TFT/TFT_Display.c
+    User/Src/TFT/TFT_BootSplash.c
+    User/Src/TFT/TFT_BootSplashData.c
 
     # KK_UI（单色菜单 UI 运行时，只依赖 TFT 公共接口）
     User/Src/UI/KK_UI.c

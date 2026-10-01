@@ -25,7 +25,7 @@ typedef uint16_t KK_UI_EventId;
 /* 手势阈值：每个方向累计多少个编码器计数才算一次「上 / 下 / 确定」。 */
 /* 调大 = 更迟钝、不易误触发；调小 = 更灵敏、轻轻一拨就动。 */
 /* 编码器是 TIM_ENCODERMODE_TI1（只数 TI1 边沿、无四倍频），所以这就是线脉冲个数。 */
-#define KK_UI_INPUT_WHEEL_STEPS 5000
+#define KK_UI_INPUT_WHEEL_STEPS 4000
 
 /* 两次手势之间的最小冷却时间，毫秒。 */
 /* 调大 = 一次拨动只算一格、但连拨变慢；调小 = 连拨更快、惯性可能多带一格。 */
@@ -275,6 +275,26 @@ void KK_UI_InvalidateRegion(int16_t x, int16_t y, uint16_t width, uint16_t heigh
 bool KK_UI_GetDirtyRect(int16_t *x, int16_t *y, uint16_t *width, uint16_t *height);
 
 KK_UI_Status KK_UI_RecoverDisplay(void);
+
+/**
+ * 进入/退出「直推模式」：屏幕内容由应用全权负责，核心不绘制也不提交。
+ *
+ * 用途是需要整屏显示非 1bpp 内容的页面（比如直接推送 RGB565 图片）。
+ * 核心的帧缓冲只有黑白两色，无法表达这种画面；而它的每次绘制都会把屏幕
+ * 覆盖掉，所以必须显式让核心放手。
+ *
+ * 进入后：
+ *   - 核心不再调用 TFT_Update*()，也不做局部重绘；
+ *   - 输入归一化与 KK_UI_CustomOnInput/Tick() **照常运行**，应用正是靠它们
+ *     在图片之间切换；
+ *   - 调用方需要自己保证屏幕内容，并自行处理 TFT_BUSY（应用直接推图时）。
+ *
+ * 退出后核心会强制整屏重画：屏幕上的内容已经被应用改过，帧缓冲里的差异
+ * 再也算不出正确结果。
+ *
+ * 必须在页面回调（OnEnter/OnLeave 等）或主循环里调用，不能在中断里调用。
+ */
+void KK_UI_SetDirectFrame(bool enable);
 
 bool KK_UI_PollEvent(KK_UI_EventId *out_event);
 bool KK_UI_PollError(KK_UI_ErrorInfo *out_error);

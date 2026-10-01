@@ -232,6 +232,7 @@ typedef struct {
     uint8_t dirty;
     uint8_t dirty_full;   /* 本帧必须整屏重绘，不允许局部重绘。 */
     uint8_t display_fault;
+    uint8_t direct_frame; /* 屏幕内容由应用全权负责，核心不绘制也不提交。 */
     uint8_t error_valid;
     uint8_t in_callback;
     uint8_t reject_flash;

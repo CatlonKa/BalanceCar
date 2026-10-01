@@ -271,6 +271,39 @@ void KK_UI_Invalidate(void)
     }
 }
 
+void KK_UI_SetDirectFrame(bool enable)
+{
+    if (kk_ui.initialized == 0U) {
+        return;
+    }
+
+    kk_ui.direct_frame = enable ? 1U : 0U;
+
+    if (kk_ui.direct_frame != 0U) {
+        /*
+         * 进入直推：把本帧还没发出去的东西丢掉。
+         * 不丢的话，下一轮提交会把应用刚推上去的画面覆盖成黑白界面。
+         * 注意这里顺手把 dirty 也清掉，所以接下来核心不会再因为本帧的脏标志
+         * 而绘制。
+         */
+        kk_ui.dirty = 0U;
+        kk_ui.dirty_full = 0U;
+        kk_ui.frame_ready = 0U;
+        kk_ui.dirty_x = 0;
+        kk_ui.dirty_y = 0;
+        kk_ui.dirty_x1 = 0;
+        kk_ui.dirty_y1 = 0;
+    } else {
+        /*
+         * 退出直推：强制整屏重画。
+         * 屏幕上的内容已经被应用改过（推了彩色图），而帧缓冲还停留在
+         * 进入之前的样子，逐字节比较再也算不出正确差异。
+         */
+        kk_ui.dirty = 1U;
+        kk_ui.dirty_full = 1U;
+    }
+}
+
 /** 判断当前累积的脏矩形是否有效（两个方向都必须为正）。 */
 static bool kk_ui_dirty_rect_valid(void)
 {
@@ -866,9 +899,16 @@ KK_UI_Status KK_UI_Update(uint32_t now, KK_UI_Input input)
         kk_ui.next_frame = now;
     }
     kk_ui.last_update = now;
-    status = kk_ui_check_transfer(now);
-    if (status != KK_UI_OK || kk_ui.display_fault != 0U) {
-        return status != KK_UI_OK ? status : KK_UI_DISPLAY_ERROR;
+
+    /*
+     * 直推模式下屏幕内容由应用全权负责，核心不碰总线：既不检查/等待传输，
+     * 也不绘制和提交。输入处理照常走（见下面），因为应用正是靠手势切图片。
+     */
+    if (kk_ui.direct_frame == 0U) {
+        status = kk_ui_check_transfer(now);
+        if (status != KK_UI_OK || kk_ui.display_fault != 0U) {
+            return status != KK_UI_OK ? status : KK_UI_DISPLAY_ERROR;
+        }
     }
 
     KK_UI_AnimateNavigation(now);
@@ -880,6 +920,11 @@ KK_UI_Status KK_UI_Update(uint32_t now, KK_UI_Input input)
     KK_UI_ApplyDeferred(now);
     KK_UI_CustomTick(now);
     KK_UI_ApplyDeferred(now);
+
+    /* 画完输入就收工：直推模式下本帧的屏幕内容由应用自己负责。 */
+    if (kk_ui.direct_frame != 0U) {
+        return KK_UI_OK;
+    }
 
     if (kk_ui.dirty != 0U && (int32_t)(now - kk_ui.next_frame) >= 0) {
         uint32_t missed = (now - kk_ui.next_frame) / KK_UI_FRAME_INTERVAL_MS;

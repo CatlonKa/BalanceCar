@@ -12,4 +12,7 @@ extern const uint8_t kk_ui_icon_menu[128];
 extern const uint8_t kk_ui_icon_status[128];
 extern const uint8_t kk_ui_icon_wave[128];
 
+/* 图片页图标：相框 + 太阳 + 两座山，32x32。 */
+extern const uint8_t kk_ui_icon_image[128];
+
 #endif /* KK_UI_APPICONS_H */
