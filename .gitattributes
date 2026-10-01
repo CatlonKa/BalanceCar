@@ -1,0 +1,25 @@
+# 统一换行符：仓库内一律存 LF，检出到各平台也用 LF。
+#
+# 本工程在 Windows 上开发，但 GCC 工具链对 LF/CRLF 都不敏感。
+# 固定成 LF 可以避免「同一次编辑只改了换行符」造成的整文件 diff 抖动，
+# 也让 GitHub 上的 diff 和 CI（如果在 Linux 上构建）保持一致。
+#
+# 如果你的编辑器/烧录工具链要求 CRLF，把下面这行的 eol=lf 去掉即可，
+# 那样会退回 Git 默认行为（仓库内 LF、检出时按平台转换）。
+* text=auto eol=lf
+
+# 明确标为二进制，避免 Git 尝试做文本转换或行尾处理。
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.pdf   binary
+*.zip   binary
+*.7z    binary
+*.elf   binary
+*.bin   binary
+*.hex   binary
+*.o     binary
+*.a     binary
+*.pyc   binary

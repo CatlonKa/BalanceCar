@@ -1,0 +1,53 @@
+build
+mx.scratch
+!.settings
+
+# ===================================================================
+# 以下为手工追加。上面三行由 STM32CubeMX 生成，勿删。
+# ===================================================================
+
+# ---- 构建产物 ----
+# CMake/Ninja 的输出全在 build/ 下（Balance.elf / Balance.map /
+# compile_commands.json / CMakeCache.txt），已由上面的 "build" 覆盖。
+compile_commands.json
+
+# ---- IDE / 工具临时文件 ----
+# .settings 按 CubeMX 的设定入库，这里只挡掉其它本地状态。
+.cache/
+.vscode/*.log
+*.bak
+*.orig
+*.rej
+*~
+*.tmp
+
+# ---- Python（TFT_Resources/fonts 下的取模/校验脚本）----
+__pycache__/
+*.py[cod]
+
+# ---- CMSIS 中本工程从不参与编译的组件（约 13 MB）----
+# 只用到 CMSIS/Include 与 CMSIS/Device/ST/STM32F4xx 两部分。
+Drivers/CMSIS/DSP/
+Drivers/CMSIS/NN/
+Drivers/CMSIS/Core_A/
+Drivers/CMSIS/DAP/
+Drivers/CMSIS/RTOS/
+Drivers/CMSIS/RTOS2/
+Drivers/CMSIS/Documentation/
+
+# ---- 启动文件只用 GCC 那一套 ----
+Drivers/CMSIS/Device/ST/STM32F4xx/Source/Templates/arm/
+Drivers/CMSIS/Device/ST/STM32F4xx/Source/Templates/iar/
+
+# ---- 第三方仓库的本地克隆 ----
+# TFT_Resources/kk_oled 是上游 keysking/kk_oled 的完整克隆（自带 .git），
+# 只作移植参考；运行时副本已落在 User/{Inc,Src}/TFT/。
+# 直接提交会变成一个没有 .gitmodules 的坏 submodule 指针（GitHub 上点不开），
+# 所以保留在本地但不入库。
+TFT_Resources/kk_oled/
+
+# ---- 操作系统 ----
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store
