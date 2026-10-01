@@ -312,6 +312,35 @@ TFT_Status TFT_Init(void)
     return status;
 }
 
+void TFT_DeInit(void)
+{
+    /*
+     * 屏幕已经不在（拔掉或断电），先把驱动层收干净：它会停背光 PWM，
+     * 但不会向 SPI 发任何命令。
+     */
+    TFT_DriverDeInit();
+
+    /* 状态复位与 TFT_Init() 一致，保证下一次初始化从确定的空白帧开始。 */
+    memset(tft_buffers, 0, sizeof(tft_buffers));
+    tft_stable_index = 0U;
+    tft_draw_index = 1U;
+    tft_transfer_index = 1U;
+    tft_async_pending = false;
+    tft_force_full = false;
+    tft_power_save = false;
+#if TFT_RETAIN_FRAME
+    tft_retain_pending = false;
+#endif
+    tft_dirty_declared = false;
+    tft_rotation = TFT_ROTATION_0;
+    tft_draw_mode = TFT_DRAW_SET;
+    tft_background_mode = TFT_BG_TRANSPARENT;
+    TFT_ResetClipWindow();
+
+    tft_initialized = false;
+    tft_last_status = TFT_OK;
+}
+
 TFT_Status TFT_Update(void)
 {
     return tft_begin_update(TFT_UPDATE_BLOCKING);

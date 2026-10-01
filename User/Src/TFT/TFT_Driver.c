@@ -492,6 +492,29 @@ static void tft_finish_async(TFT_Status status)
 /* ------------------------------------------------------------ 对外接口 ---- */
 
 /**
+ * 丢弃驱动状态：屏幕已经断电或被拔掉，这里只清理本地状态。
+ *
+ * 刻意不做两件事：
+ *   不向 SPI 发任何命令（ST7735S 已经没电，命令送不到）
+ *   不等异步传输结束（主机发数据不依赖从机，等它没有意义）
+ * 但背光 PWM 必须停：屏幕都不在，继续输出只是在空转。
+ * 还留在路上的数据不会送到任何地方，其完成回调只会再写一遍下面的静态状态，
+ * 不会越界，所以强行复位是安全的。
+ */
+void TFT_DriverDeInit(void)
+{
+    (void)HAL_TIMEx_PWMN_Stop(&htim8, TIM_CHANNEL_3);
+    tft_backlight_write(false);
+    tft_deselect();
+
+    tft_driver_busy = false;
+    tft_driver_mode = TFT_DRIVER_MODE_NONE;
+    tft_driver_page = 0U;
+    tft_driver_segment_index = 0U;
+    tft_driver_segment_count = 0U;
+}
+
+/**
  * 等待面板上电稳定，发送 ST7735S 初始化序列，用背景色清空可见区，
  * 最后打开显示并点亮背光。初始化阶段故意使用阻塞调用，保证返回时屏幕状态确定。
  */

@@ -15,6 +15,15 @@
 /** 初始化 ST7735S，清空可见区后点亮背光。 */
 TFT_Status TFT_DriverInit(void);
 
+/**
+ * 丢弃驱动状态，屏幕已经断电或被拔掉时使用。
+ *
+ * 与 TFT_DriverInit() 不同，本函数不向 SPI 发任何命令、不等异步传输结束，
+ * 只把本地状态和背光恢复成“没有屏幕”的样子，保证下一次 TFT_DriverInit()
+ * 可以从确定状态重新开始。
+ */
+void TFT_DriverDeInit(void);
+
 /** 阻塞发送核心准备好的全部差异页，返回时传输已经完成。 */
 TFT_Status TFT_DriverWriteBlocking(void);
 

@@ -30,7 +30,7 @@
 /* USER CODE BEGIN Includes */
 #include "KK_UI_App.h"
 #include "LED.h"
-#include "TFT.h"
+#include "TFT_Display.h"
 #include "imu.h"
 #include "encoder.h"
 #include "event.h"
@@ -131,27 +131,11 @@ int main(void)
 
 
   HAL_GPIO_WritePin(CR_GPIO_Port, CR_Pin, GPIO_PIN_SET);
-  HAL_Delay(2);
-  TFT_Init();
+  TFT_DisplayInit();
   event_init();
   encoder_init();
   motor_init();
-  KK_UI_AppInit();
-  
-
-
-  
-
   DI_ALL_LED(0, 10, 10);
-  HAL_Delay(1000);
-
-  
-
-  LED2(1);
-  HAL_Delay(1000);
-  LED2(0);
-  HAL_Delay(1000);
-
 
   imu_init();//测试用，并非真正的初始化
 
@@ -161,19 +145,18 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    /* 不慢于 10 ms 调用一次：输入采样和界面推进都由这一次调用驱动。 */
-    KK_UI_AppUpdate();
-
+    /*
+     * 车轮归属有变化时由它收尾，并告诉我们现在能不能碰 UI。
+     * 屏幕未就绪时完全不碰：不取输入、不绘制、不提交刷新、不改背光。
+     */
+    if (TFT_DisplaySync())
+    {
+      /* 不慢于 10 ms 调用一次：输入采样和界面推进都由这一次调用驱动。 */
+      KK_UI_AppUpdate();
+    }
 
     float voltage = Analog_Read();
     uart_send_voltage((uint32_t)(voltage * 1000.0f));
-
-    /*
-     * TIM6（编码器测速）的启停归 car_state() 管，编码器计数器也只在
-     * encoder_get_delta_*() 里读一次就清零。主循环里不要重复清零：
-     * 那会把 UI 手势还没读走的计数丢掉。
-     */
-
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
