@@ -1,10 +1,7 @@
 #ifndef TFT_CONFIG_H
 #define TFT_CONFIG_H
 
-/*
- * 本文件集中存放当前这块 LCD 的硬件事实。
- * 这里每个值都必须来自工程接线、模组资料或实测，不能照抄其他模组的常见值。
- */
+/* 当前 LCD 的硬件事实。每个值都必须来自接线、模组资料或实测，不能照抄其它模组。 */
 
 #include "main.h"
 #include "spi.h"
@@ -24,34 +21,17 @@
 #define TFT_PHYSICAL_PAGES (TFT_PHYSICAL_HEIGHT / 8U)
 
 /*
- * ST7735S 内部显存为 132 x 162，128 x 160 只是它的一块可见子窗口，
- * 这两个偏移决定可见区左上角落在控制器显存中的哪个位置。
- *
- * (0, 0) 已在本模组上实物验证：贴满可见区的 1 像素边框四条边都完整压住
- * 屏幕边缘，方向正确。换模组时需要重新验证。
- *
- * 重新验证的办法：画一圈 TFT_DrawFrame(0, 0, TFT_GetWidth(), TFT_GetHeight())、
- * 四个角各加一块实心标记，四边都应贴住屏幕边缘；若一侧边框被裁掉、
- * 对侧出现黑边，就把黑边那一侧的偏移增大（边框被裁一侧的偏移减小）。
+ * 可见区左上角在控制器 132x162 显存中的偏移（ST7735S，128x160 只是子窗口）。
+ * 本模组 (0,0) 已实物验证；换模组用 TFT_DrawFrame(0,0,w,h) 核对四边，
+ * 被裁一侧的偏移减小、对侧出现黑边则增大。
  */
 #define TFT_GRAM_COLUMN_OFFSET 0U
 #define TFT_GRAM_ROW_OFFSET    0U
 
 /*
- * 0x36 Memory Access Control：bit7 MY、bit6 MX、bit5 MV、bit3 BGR。
- *
- * 0xC0 = MY | MX（不带 BGR）。
- *
- * ⚠️ bit3 是 2026-10-02 才真正定下的，别再照旧注释里的“已验证”去改：
- * 在那之前屏幕只有黑白两色（TFT_COLOR_FOREGROUND/BACKGROUND），而黑白下
- * R=G=B，BGR 位**完全没有可见影响**，所以当时根本验不出来。
- * 第一次上彩色图（开机图）就暴露了：红色整体偏蓝，正是 R/B 互换的典型症状。
- *
- * bit3 = 1 表示“先 R 后 B”，0 表示“先 B 后 R”。若以后换模组后发现
- * 红蓝又反了，改这一位即可（0xC0 <-> 0xC8）。
- *
- * MY 与 MX 同时置位等价于整体旋转 180°，属于纯旋转，用 TFT_SetRotation()
- * 就能纠回正方向，与本宏无关。
+ * 0x36 MADCTL：bit7 MY、bit6 MX、bit5 MV、bit3 BGR。0xC0 = MY|MX，BGR=0。
+ * 黑白界面下 BGR 位无可见影响（R=G=B）；换模组若红蓝互换就改这一位（0xC0 <-> 0xC8）。
+ * MY 与 MX 同置等价整体旋转 180°，用 TFT_SetRotation() 纠回，与本宏无关。
  */
 #define TFT_MADCTL_VALUE 0xC0U
 

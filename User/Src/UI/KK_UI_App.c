@@ -4,23 +4,14 @@
 #include "KK_UI_Input.h"
 #include "KK_UI_Draw.h"
 #include "KK_UI_FontZh16.h"
-
+#include "Analog.h"
 #include "TFT.h"
 #include "TFT_BootSplash.h"
 #include "main.h"
 
-/*
- * KK_UI 最小可运行样例。
- *
- * 这一层只描述页面、绑定和业务事件，并把刷新所有权完全交给 KK_UI：
- * 这里不调用 TFT_Clear()，也不调用任何 TFT_Update*()。
- *
- * 页面拓扑（共 5 页）：
- *   1 首页（HOME）  -> 四个图标入口
- *   2 菜单（MENU）  -> 蜂鸣器开关 / 限速整数 / 重置确认
- *   3 状态（INFO）  -> 只读信息行
- *   4 波形（CUSTOM）-> 全屏自定义页
- *   5 图片（CUSTOM）-> 全屏彩色直推页
+/* KK_UI 可运行样例。只描述页面/绑定/业务事件，刷新所有权归 KK_UI（不调 TFT_Clear/Update）。
+ * 页面（5）：1 首页->四个图标入口 | 2 菜单->蜂鸣器/限速/重置 | 3 状态->只读信息行
+ *            4 波形(CUSTOM) | 5 图片(CUSTOM，彩色直推)
  */
 
 /* --------------------------------------------------------------- 页面编号 ---- */
@@ -39,6 +30,7 @@ KK_UI_AppState kk_ui_app_state = {
     .buzzer_on = true,
     .speed_limit = 60,
     .backlight_level = 60,   /* 默认 60% 亮度，比满亮度省电且不刺眼 */
+    /* 仅上电占位；屏幕亮起后由 kk_ui_app_update_voltage() 每 500 ms 覆写。 */
     .voltage_text = "12.6V",
     .angle_text = "0.0",
     .speed_text = "0"
@@ -76,11 +68,8 @@ static const KK_UI_MenuItem s_menu_items[] = {
     { "重置", KK_UI_MENU_CONFIRM, 0U }
 };
 
-/*
- * 菜单项动态状态表：每项 2 bit，00 正常、01 隐藏、10 禁用。
- * 4 项需要 (4 + 3) / 4 = 1 字节，全零表示全部正常。
- * 业务代码可以调用 KK_UI_SetMenuItemState() 修改它，改完调用 KK_UI_Invalidate()。
- */
+/* 菜单项状态表：每项 2 bit（00 正常 / 01 隐藏 / 10 禁用）；4 项 = 1 字节。
+ * 用 KK_UI_SetMenuItemState() 改，改完调 KK_UI_Invalidate()。 */
 static uint8_t s_menu_item_states[(4U + 3U) / 4U];
 
 static const KK_UI_MenuPage s_menu_pages[] = {
@@ -89,15 +78,98 @@ static const KK_UI_MenuPage s_menu_pages[] = {
 
 /* -------------------------------------------------------------- 信息页 ---- */
 
-/*
- * 信息行的值指向 kk_ui_app_state 里的字符缓冲区，不是编译期常量，
- * 所以这里先只声明数组，字段在 KK_UI_AppInit() 里接上。
- */
+/* 值指向 kk_ui_app_state 的缓冲区（非编译期常量），字段在 KK_UI_AppInit() 里接上。 */
 static KK_UI_InfoRow s_status_rows[3];
 
 static const KK_UI_InfoPage s_info_pages[] = {
     { "状态", s_status_rows, 3U }
 };
+
+/* ------------------------------------------------------- 状态页实时数据 ---- */
+
+/* 电压行刷新周期。ADC 在 DMA 里采，这里只读内存 + 格式化；
+ * 不限周期的话主循环每轮（~5 ms）都会重绘，500 ms 既能跟上电压变化又把重绘压到 2 Hz。 */
+#define KK_UI_APP_VOLTAGE_PERIOD_MS 500U
+
+/** 下一次允许刷新电压的时刻；0 表示还没刷新过，第一次调用立即生效。 */
+static uint32_t s_voltage_next_ms;
+
+/** 判断两个 NUL 结尾字符串是否相同（只为这里一次比较，不引 <string.h>）。 */
+static bool kk_ui_app_text_equal(const char *a, const char *b)
+{
+    while (*a != '\0' && *a == *b) {
+        ++a;
+        ++b;
+    }
+    return *a == *b;
+}
+
+/** 把无符号整数按十进制写进 out，返回写入的字符数（不含结尾 NUL）。 */
+static uint32_t kk_ui_app_put_u32(char *out, uint32_t value)
+{
+    char digits[10];
+    uint32_t count = 0U;
+    uint32_t i;
+
+    do {
+        digits[count] = (char)('0' + (value % 10U));
+        ++count;
+        value /= 10U;
+    } while (value != 0U);
+
+    for (i = 0U; i < count; ++i) {
+        out[i] = digits[count - 1U - i];
+    }
+    return count;
+}
+
+/* 拼出「12.34V」。不能用 %f / %u：nano 版无浮点 printf，整数 printf 会拉进约 3.4 KB stdio。 */
+static void kk_ui_app_format_voltage(char *out, int32_t millivolts)
+{
+    uint32_t mv;
+    uint32_t pos;
+
+    if (millivolts < 0) {
+        millivolts = 0;
+    }
+    mv = (uint32_t)millivolts;
+
+    pos = kk_ui_app_put_u32(out, mv / 1000U);
+    out[pos] = '.';
+    out[pos + 1U] = (char)('0' + ((mv % 1000U) / 100U));
+    out[pos + 2U] = (char)('0' + ((mv % 100U) / 10U));
+    out[pos + 3U] = 'V';
+    out[pos + 4U] = '\0';
+}
+
+/* 把电压写进状态页。只在显示文本变化时重绘：否则 ADC 噪声会让整屏一直闪。 */
+static void kk_ui_app_update_voltage(uint32_t now_ms)
+{
+    char text[sizeof(kk_ui_app_state.voltage_text)];
+    int32_t millivolts;
+    uint32_t i;
+
+    if (s_voltage_next_ms != 0U &&
+        (int32_t)(now_ms - s_voltage_next_ms) < 0) {
+        return;
+    }
+    s_voltage_next_ms = now_ms + KK_UI_APP_VOLTAGE_PERIOD_MS;
+
+    /* float -> 整数毫伏，+0.5 四舍五入；有 FPU，且只在主循环里跑。 */
+    millivolts = (int32_t)(Analog_ReadVoltage() * 1000.0f + 0.5f);
+    kk_ui_app_format_voltage(text, millivolts);
+
+    if (kk_ui_app_text_equal(text, kk_ui_app_state.voltage_text)) {
+        return;
+    }
+    for (i = 0U; i < sizeof(text); ++i) {
+        kk_ui_app_state.voltage_text[i] = text[i];
+        if (text[i] == '\0') {
+            break;
+        }
+    }
+    KK_UI_Invalidate();
+}
 
 /* -------------------------------------------------------------- 变量绑定 ---- */
 
@@ -160,11 +232,7 @@ static const KK_UI_App s_app = {
 
 /* ------------------------------------------------------ 波形自定义页 ---- */
 
-/*
- * 波形区几何。所有横向元素都按这几个常量对齐，改动时一起改，避免有的画到框外：
- *   边框外沿 x = 5..122，内侧可用 x = 6..121（正好 KK_UI_WAVE_POINTS 像素）
- *   边框外沿 y = 24..103，内侧可用 y = 25..102
- */
+/* 波形区几何，改动时一起改：边框外沿 x=5..122 / y=24..103，内侧 x=6..121 正好 KK_UI_WAVE_POINTS 像素。 */
 #define KK_UI_WAVE_LEFT 5              /**< 波形区左边（含边框）。 */
 #define KK_UI_WAVE_OUTER_WIDTH 118U    /**< 波形区外沿宽度。 */
 #define KK_UI_WAVE_TOP 24              /**< 波形区上边。 */
@@ -172,49 +240,41 @@ static const KK_UI_App s_app = {
 #define KK_UI_WAVE_INNER_LEFT 6        /**< 边框内侧左边。 */
 #define KK_UI_WAVE_POINTS 116U         /**< 波形点数，正好铺满边框内侧。 */
 #define KK_UI_WAVE_RIGHT 122           /**< 波形区右边（含边框），右对齐文字用。 */
-#define KK_UI_WAVE_FULL 32    /**< 采样满量程，绘制时按比例折算成像素。 */
 #define KK_UI_WAVE_PERIOD_MS 40U /**< 采样间隔，决定波形滚动速度。 */
-#define KK_UI_WAVE_AMPLITUDE_MIN 2U
-#define KK_UI_WAVE_AMPLITUDE_MAX 16U
 
-/*
- * 波形页是否启用局部重绘。
- *
- * 1 = 每帧只清除并重画波形带，标题、边框和「限速」提示沿用上一帧；
- * 0 = 每帧整屏重画（改动前的行为）。
- * 实物上若发现波形区有残影或与边框错位，把它改成 0 即可回退。
- *
- * 注意：进度条与「限速」文字目前不会变，所以不在脏区里。
- * 一旦它们随数据变化（例如限速值可调），必须把它们的区域也声明进去，
- * 否则旧内容会一直留在屏幕上。
- */
+/* 波形纵轴固定 11.1~12.6V，不自动缩放：曲线纵向位置即电压绝对值；超出压到框底/顶。 */
+#define KK_UI_WAVE_MIN_MV 11100
+#define KK_UI_WAVE_MAX_MV 12600
+#define KK_UI_WAVE_SPAN_MV (KK_UI_WAVE_MAX_MV - KK_UI_WAVE_MIN_MV)
+#define KK_UI_WAVE_FULL 255U   /**< 归一化满量程，对应 KK_UI_WAVE_MAX_MV。 */
+
+/* 波形页局部重绘：1 = 每帧只重画波形带；0 = 整屏重画（残留/错位时回退用）。
+ * 进度条与「限速」文字目前不变所以不在脏区，一旦会变必须一并声明，否则留残影。 */
 #define KK_UI_APP_WAVE_PARTIAL 1
 
 static uint8_t s_wave_samples[KK_UI_WAVE_POINTS];
 static uint16_t s_wave_head;        /**< 下一个写入位置。 */
-static uint16_t s_wave_phase;       /**< 占位波形的相位。 */
-static uint8_t s_wave_amplitude = 12U;
 static uint32_t s_wave_next_ms;     /**< 下一次采样的时刻。 */
 
-/*
- * 占位波形：由相位推出的三角波。
- *
- * 业务模块接入后把这里换成真实采样（例如陀螺仪原始值或 PWM 输出），
- * 只需要把结果归一到 0..KK_UI_WAVE_FULL 并由 KK_UI_CustomOnTick() 推进。
- */
-static uint8_t kk_ui_wave_placeholder(void)
+/* 把当前电压折算成 0..KK_UI_WAVE_FULL 的纵向位置。
+ * 用 Analog_ReadVoltageCode()（块平均、不过 IIR）；不要改成单点，单点噪声会显示成锯齿。 */
+static uint8_t kk_ui_wave_sample(void)
 {
-    uint16_t t = (uint16_t)(s_wave_phase & 0x3FU);
-    int32_t value = (t < 32U) ? (int32_t)t : (int32_t)(63U - t);
-    value = value * (int32_t)s_wave_amplitude / 32;
-    s_wave_phase = (uint16_t)((s_wave_phase + 1U) & 0x3FU);
-    if (value < 0) {
-        value = 0;
+    const float volts = (float)Analog_ReadVoltageCode() * VOLTAGE_RATIO /
+                        ADC_FULL_SCALE;
+    const int32_t mv = (int32_t)(volts * 1000.0f + 0.5f);
+    int32_t level;
+
+    if (mv <= KK_UI_WAVE_MIN_MV) {
+        return 0U;
     }
-    if (value > KK_UI_WAVE_FULL) {
-        value = KK_UI_WAVE_FULL;
+    if (mv >= KK_UI_WAVE_MAX_MV) {
+        return (uint8_t)KK_UI_WAVE_FULL;
     }
-    return (uint8_t)value;
+    /* 整数算不溢出；KK_UI_WAVE_FULL 不能超 255（s_wave_samples 是 uint8_t[]）。 */
+    level = (mv - KK_UI_WAVE_MIN_MV) * (int32_t)KK_UI_WAVE_FULL /
+            KK_UI_WAVE_SPAN_MV;
+    return (uint8_t)level;
 }
 
 static void kk_ui_wave_draw_label(int16_t x_offset, int16_t clip_x,
@@ -329,11 +389,18 @@ void KK_UI_CustomOnEnter(KK_UI_PageId page)
     if (page != KK_UI_APP_PAGE_WAVE) {
         return;
     }
-    for (i = 0U; i < KK_UI_WAVE_POINTS; ++i) {
-        s_wave_samples[i] = 0U;
+    /*
+     * 用当前电压铺满整条缓冲，而不是填 0：填 0 会让曲线从框底爬上来，
+     * 而这一页的纵轴是固定量程，一开始就应该停在真实电平上。
+     */
+    {
+        const uint8_t level = kk_ui_wave_sample();
+
+        for (i = 0U; i < KK_UI_WAVE_POINTS; ++i) {
+            s_wave_samples[i] = level;
+        }
     }
     s_wave_head = 0U;
-    s_wave_phase = 0U;
     s_wave_next_ms = 0U;
 }
 
@@ -376,19 +443,10 @@ void KK_UI_CustomOnInput(KK_UI_PageId page, KK_UI_InputEvent event)
         (void)KK_UI_ShowToast("波形", 800U);
         return;
     }
-    if (event.action == KK_UI_INPUT_UP) {
-        if (s_wave_amplitude + event.steps <= KK_UI_WAVE_AMPLITUDE_MAX) {
-            s_wave_amplitude = (uint8_t)(s_wave_amplitude + event.steps);
-        } else {
-            s_wave_amplitude = KK_UI_WAVE_AMPLITUDE_MAX;
-        }
-    } else if (s_wave_amplitude > KK_UI_WAVE_AMPLITUDE_MIN + event.steps) {
-        s_wave_amplitude = (uint8_t)(s_wave_amplitude - event.steps);
-    } else {
-        s_wave_amplitude = KK_UI_WAVE_AMPLITUDE_MIN;
-    }
-    /* 幅度只影响波形带。 */
-    kk_ui_wave_invalidate_plot();
+    /*
+     * 纵轴量程固定（11.1~12.6V），这一页没有可调项，上/下拨轮不做事。
+     * 以后若在这里加可调项，改完同样要调 kk_ui_wave_invalidate_plot()。
+     */
 }
 
 bool KK_UI_CustomOnTick(KK_UI_PageId page, uint32_t now_ms)
@@ -421,7 +479,7 @@ bool KK_UI_CustomOnTick(KK_UI_PageId page, uint32_t now_ms)
     }
     count = missed;
     while (count-- != 0U) {
-        s_wave_samples[s_wave_head] = kk_ui_wave_placeholder();
+        s_wave_samples[s_wave_head] = kk_ui_wave_sample();
         s_wave_head = (uint16_t)((s_wave_head + 1U) % KK_UI_WAVE_POINTS);
     }
     s_wave_next_ms += missed * KK_UI_WAVE_PERIOD_MS;
@@ -503,10 +561,7 @@ void KK_UI_CustomOnDraw(KK_UI_PageId page, int16_t x_offset, int16_t clip_x,
 
 /* ------------------------------------------------------------- 生命周期 ---- */
 
-/*
- * 界面活动状态：0 = 还没应用过，1 = 活动（背光亮、UI 推进），2 = 锁定（电机在转）。
- * 用 0 起步是为了让第一次 AppUpdate() 无论实际状态如何都会应用一次背光。
- */
+/* 0 = 还没应用过，1 = 活动，2 = 锁定（电机在转）。0 起步保证首次 AppUpdate 必应用一次背光。 */
 static uint8_t s_ui_state;
 
 /* 把当前亮度写进背光：界面活动时用状态里的亮度，否则熄灭。 */
@@ -544,11 +599,7 @@ KK_UI_Status KK_UI_AppInit(void)
     KK_UI_InputReset();
     status = KK_UI_Init(&s_app);
 
-    /*
-     * 立刻按当前阶段设一次背光。
-     * 不这样做的话，TFT_DriverInit() 结尾点亮的满亮度会一直持续到主循环里
-     * 第一次 KK_UI_AppUpdate()，而两者之间可能隔着几秒的初始化延时。
-     */
+    /* 立刻按当前阶段设一次背光，否则 TFT_DriverInit() 的满亮度会持续到首次 AppUpdate。 */
     s_ui_state = KK_UI_InputWheelUsable() ? 1U : 2U;
     kk_ui_app_apply_backlight();
 
@@ -564,12 +615,8 @@ void KK_UI_AppUpdate(void)
     KK_UI_ErrorInfo error;
 
     /*
-     * 两个阶段（判据由 KK_UI_Input 提供，见 KK_UI_Input.h 的 KK_UI_INPUT_HAS_WHEEL）：
-     *   车轮可用（电机已停止输出）→ 背光点亮，界面正常工作；
-     *   车轮不可用（电机在驱动车轮）→ 车轮不是用户输入，关背光节能，
-     *                                  并且完全不推进 UI（不取样、不绘制、不提交）。
-     * 只在状态切换时写背光：TFT_SetBacklightLevel() 会覆盖 TFT_GetLastStatus()，
-     * 每轮都写会把异步刷新的错误状态冲掉。
+     * 车轮可用（电机停）-> 背光点亮、界面正常；不可用 -> 关背光且完全不推进 UI。
+     * 只在状态切换时写背光：每轮都写会冲掉 TFT_GetLastStatus() 的异步刷新状态。
      */
     ui_state = KK_UI_InputWheelUsable() ? 1U : 2U;
     if (ui_state != s_ui_state) {
@@ -579,6 +626,9 @@ void KK_UI_AppUpdate(void)
     if (ui_state != 1U) {
         return;
     }
+
+    /* 状态页的电压是唯一一份需要周期性刷新的业务数据。 */
+    kk_ui_app_update_voltage(now);
 
     input = KK_UI_InputRead(now);
 

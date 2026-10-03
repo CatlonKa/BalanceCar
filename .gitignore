@@ -39,18 +39,12 @@ Drivers/CMSIS/Documentation/
 Drivers/CMSIS/Device/ST/STM32F4xx/Source/Templates/arm/
 Drivers/CMSIS/Device/ST/STM32F4xx/Source/Templates/iar/
 
-# ---- 第三方仓库的本地克隆 ----
-# TFT_Resources/kk_oled 是上游 keysking/kk_oled 的完整克隆（自带 .git），
-# 只作移植参考；运行时副本已落在 User/{Inc,Src}/TFT/。
-# 直接提交会变成一个没有 .gitmodules 的坏 submodule 指针（GitHub 上点不开），
-# 所以保留在本地但不入库。
-TFT_Resources/kk_oled/
-
 # ---- 素材与工具（都不参与编译烧录）----
 # TFT_Resources 下**没有任何文件进构建**：CMakeLists.txt 的源文件全在 User/ 下，
 # 包含路径也只有 User/Inc、User/Inc/TFT、User/Inc/UI。
-# 这里放的是取模/转换脚本、图片原图与预览、以及字模归档副本，
+# 这里放的是取模/转换脚本、图片原图与预览，以及字模归档副本，
 # 属于本机的制作过程产物，没有必要随固件源码上传，所以整个目录不入库。
+#
 #
 # 真正参与编译的对应文件都在 User/ 下，不受影响：
 #   开机图数据  User/Src/TFT/TFT_BootSplashData.c
@@ -67,3 +61,8 @@ Desktop.ini
 # ---- 个人待办清单 ----
 # TODO.md 是本机的执行清单（含未完成的计划和个人节奏），不对外公开。
 TODO.md
+
+# ---- AI 协作约定 ----
+# copilot-instructions.md 是本机的代码书写约定（注释风格等），只给本机 AI 看，
+# 与固件功能无关，不随源码上传。
+.github/copilot-instructions.md

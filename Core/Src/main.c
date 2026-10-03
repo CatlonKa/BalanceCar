@@ -129,10 +129,10 @@ int main(void)
   /* USER CODE BEGIN 2 */
 
 
-
   HAL_GPIO_WritePin(CR_GPIO_Port, CR_Pin, GPIO_PIN_SET);
   TFT_DisplayInit();
   event_init();
+  Analog_Init();
   encoder_init();
   motor_init();
   DI_ALL_LED(0, 10, 10);
@@ -145,18 +145,17 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    /*
-     * 车轮归属有变化时由它收尾，并告诉我们现在能不能碰 UI。
-     * 屏幕未就绪时完全不碰：不取输入、不绘制、不提交刷新、不改背光。
-     */
+    //TFT屏幕
     if (TFT_DisplaySync())
     {
-      /* 不慢于 10 ms 调用一次：输入采样和界面推进都由这一次调用驱动。 */
       KK_UI_AppUpdate();
     }
 
-    float voltage = Analog_Read();
-    uart_send_voltage((uint32_t)(voltage * 1000.0f));
+
+    //读电压和温度值
+    float voltage = Analog_ReadVoltage();
+    float temperature = Analog_ReadTemperature();
+    HAL_Delay(5);
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */

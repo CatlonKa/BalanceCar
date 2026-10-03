@@ -154,25 +154,10 @@ static void tft_set_dc(bool is_data)
                       is_data ? GPIO_PIN_SET : GPIO_PIN_RESET);
 }
 
-/**
- * 设置背光亮度，level 为 0~100 的百分比。
- *
- * PB1 已经改成 TIM8_CH3N 的 PWM 输出，所以这里不再是写 GPIO 电平，
- * 而是改比较值：
- *   TIM8 时钟 = 168 MHz（APB2），Prescaler = 420−1、Period = 100−1
- *   -> PWM 频率 = 168 MHz / 420 / 100 = 4 kHz，占空比 100 级
- *   4 kHz 远高于人眼闪烁感知，也不会像低频那样在背光电路上啸叫。
- *
- * 注意 CubeMX 把 OCNPolarity 配的是 LOW，CH3N 相对 OCxREF 是反相的：
- *   引脚高电平占比 = (Period − CCR) / Period
- * 所以「越亮」对应 CCR 越小。这一层反相已经在下面换算掉了，
- * 调用方只需要给直觉上的 0~100。
- *
- * ⚠️ 推论（很容易踩）：因为反相，**输出被禁用时引脚会变高**，也就是背光最亮。
- * 所以关背光只能靠「CCR = Period」（OCxREF 恒 1 → 引脚恒 0），
- * 不能用 HAL_TIMEx_PWMN_Stop() / 清 MOE 这类「禁用输出」的做法，
- * 也不能只靠电平判断“低就是灭”。
- */
+/* 设置背光亮度，level 为 0~100。
+ * PB1 = TIM8_CH3N：168 MHz / 420 / 100 = 4 kHz PWM，占空比 100 级。
+ * OCNPolarity=LOW 会反相：引脚高占比 = (Period − CCR) / Period，越亮 CCR 越小。
+ * ⚠️ 反相推论：禁用输出时引脚变高 = 背光最亮，所以关背光只能靠 CCR = Period。 */
 static void tft_backlight_write_level(uint8_t level)
 {
     uint32_t period = (uint32_t)htim8.Init.Period + 1U;
@@ -203,15 +188,8 @@ static void tft_backlight_write(bool enable)
 static void tft_backlight_start(void)
 {
     /*
-     * 背光用的是互补输出 CH3N，必须用 PWMN 版本启动：
-     * HAL_TIM_PWM_Start() 只开 CC3E（主通道，PB1 没引出），
-     * 而 HAL_TIMEx_PWMN_Start() 会开 CC3NE 并置位 MOE 主输出使能。
-     * 缺了 MOE，引脚不会输出任何波形。
-     *
-     * ⚠️ 本函数必须与「把比较值设成 0 亮度」配合使用，**绝不能用
-     * HAL_TIMEx_PWMN_Stop() 来关背光**，原因见 tft_backlight_write_level()
-     * 和 TFT_DriverDeInit() 的注释：停掉通道会把 PB1 拉到高电平，
-     * 那是背光最亮，而不是熄灭。
+     * 背光是互补输出 CH3N，必须用 PWMN 版本：PWM_Start 只开 CC3E 且不置 MOE，引脚无波形。
+     * ⚠️ 关背光只能用「亮度设 0」，不能用 PWMN_Stop（见 tft_backlight_write_level）。
      */
     (void)HAL_TIMEx_PWMN_Start(&htim8, TIM_CHANNEL_3);
 }
@@ -504,50 +482,24 @@ static void tft_finish_async(TFT_Status status)
 
 /* ------------------------------------------------------------ 对外接口 ---- */
 
-/**
- * 关闭屏幕并丢弃驱动状态。
- *
- * 使用场景是「车轮交回电机」，但只要屏幕还插着，我们也希望它明确黑掉：
- * 不拔线就能一眼分清当前是运动状态还是 UI 状态。
- * 所以这里会关背光、关显示并让面板进睡眠，把画面内容也丢掉。
- *
- * 发命令是安全的：屏幕真被拔掉时主机侧 SPI 对着空气发送依然返回 HAL_OK，
- * 从机在不在都不影响主机完成传输。唯一要避开的是自己正在异步传输的时刻——
- * 那时总线上有页数据，穿插命令会把两者都搞成乱码，所以改为只关背光。
- *
- * 刻意不等异步传输结束：主机发数据不依赖从机，等它没有意义。
- * 还留在路上的数据不会送到任何地方，其完成回调只会再写一遍下面的静态状态，
- * 不会越界，所以强行复位是安全的。
- */
+/* 关背光 + 关显示 + 面板睡眠，并清驱动状态（用于「车轮交回电机」）。
+ * 屏幕被拔掉也安全：SPI 主机对空气发送仍返回 HAL_OK。
+ * 唯一要避开的是正在异步传输的时刻（总线上有页数据，插命令会乱码），此时只关背光。 */
 void TFT_DriverDeInit(void)
 {
     bool was_busy = tft_driver_busy;
 
     /*
-     * 关背光。
-     *
-     * ⚠️ 这里绝对不能调 HAL_TIMEx_PWMN_Stop()。PB1 是 TIM8_CH3N 互补输出，
-     * CubeMX 把 OCNPolarity 配成 LOW（低有效），所以引脚的**无效电平是高**。
-     * Stop 会清 CC3NE、清 MOE 并停计数器，引脚随即升到高电平——
-     * 那等于背光全亮：之前看似正常只是因为面板还在扫描黑底界面，
-     * 一旦面板进睡眠（像素驱动电压被拿掉），这类 TN 屏无电压时是透光的，
-     * 背光透过来整块屏就是全白。
-     *
-     * 正确做法是让通道继续工作，把比较值设成 0 亮度：OC3REF 恒为 1，
-     * 经低有效反相后引脚恒为 0，背光才真正熄灭。
-     * 所以这里先确保输出已经在工作（重复调用无副作用），再写 0 亮度。
+     * 关背光：绝不能调 HAL_TIMEx_PWMN_Stop()。PB1 是低有效互补输出，
+     * Stop 会清 CC3NE/MOE 把引脚推到无效电平（高）= 背光全亮。
+     * 正确做法是让通道继续跑、把比较值设成 0 亮度。
      */
     tft_backlight_start();
     tft_backlight_write(false);
 
     if (!was_busy)
     {
-        /*
-         * 屏幕可能还有电，让它进睡眠。
-         *
-         * 先关显示再睡眠：DISPOFF 让面板立刻停止扫描，避免睡眠过程留下残影。
-         * 两条命令都不需要读回，所以屏幕没接时也不会出错。
-         */
+        /* 先 DISPOFF 停扫描（避免残影）再 SLPIN；不读回，屏幕没接也不出错。 */
         tft_select();
         (void)tft_write_simple_command_blocking(TFT_CMD_DISPOFF);
         (void)tft_write_simple_command_blocking(TFT_CMD_SLPIN);
@@ -563,8 +515,8 @@ void TFT_DriverDeInit(void)
 }
 
 /**
- * 等待面板上电稳定，发送 ST7735S 初始化序列，用背景色清空可见区，
- * 最后打开显示并点亮背光。初始化阶段故意使用阻塞调用，保证返回时屏幕状态确定。
+ * 等上电稳定 -> 发 ST7735S 初始化序列 -> 清屏 -> 开显示点亮背光。
+ * 全程阻塞，保证返回时屏幕状态确定。
  */
 TFT_Status TFT_DriverInit(void)
 {
@@ -579,11 +531,8 @@ TFT_Status TFT_DriverInit(void)
     tft_driver_segment_count = 0U;
     tft_driver_segment_index = 0U;
 
-/*
- * 初始化延时都取 datasheet 的最小要求 + 余量。这几个值直接决定
- * 「按 KEY0 停车后要等多久才看到界面」，所以不要随手加大。
- * 实测这里一次约 380 ms（含后面清屏的 SPI 传输）。
- */
+/* 初始化延时取 datasheet 最小值 + 余量；它决定停车后等多久看到界面，别随手加大。
+ * 整段约 380 ms（含清屏的 SPI 传输）。 */
 
     /* 初始化期间先关背光，避免用户看到上电随机内容。 */
     tft_backlight_start();

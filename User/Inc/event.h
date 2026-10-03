@@ -4,6 +4,8 @@
 #include "main.h"
 #include "tim.h"
 #include "encoder.h"
+#include "key.h"
+#include "Analog.h"
 
 extern int16_t speedL;
 extern int16_t speedR;
