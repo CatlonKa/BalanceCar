@@ -26,6 +26,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     {
         key_tick();
         car_state();
+        buzzer_tick();
     }
 }
 
@@ -48,6 +49,7 @@ void car_state(void)
         __HAL_TIM_SET_COUNTER(&htim4, 0);
         car_run = 1;
         HAL_TIM_Base_Start_IT(&htim6);
+        buzzer_startup_tone();
     }
 
     car_state_changed = 1;

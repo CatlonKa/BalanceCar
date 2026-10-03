@@ -38,6 +38,7 @@
 #include "motor.h"
 #include "uart.h"
 #include "Analog.h"
+#include "Buzzer.h"
 
 
 
@@ -135,6 +136,7 @@ int main(void)
   Analog_Init();
   encoder_init();
   motor_init();
+  buzzer_init();
   DI_ALL_LED(0, 10, 10);
 
   imu_init();//测试用，并非真正的初始化

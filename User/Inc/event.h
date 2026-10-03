@@ -6,6 +6,7 @@
 #include "encoder.h"
 #include "key.h"
 #include "Analog.h"
+#include "Buzzer.h"
 
 extern int16_t speedL;
 extern int16_t speedR;
