@@ -53,6 +53,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     User/Src/key.c
     User/Src/motor.c
     User/Src/Analog.c
+    User/Src/Buzzer.c
 
     # TFT LCD（ST7735S，SPI1）
     User/Src/TFT/TFT.c

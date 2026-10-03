@@ -63,6 +63,7 @@ Desktop.ini
 TODO.md
 
 # ---- AI 协作约定 ----
-# copilot-instructions.md 是本机的代码书写约定（注释风格等），只给本机 AI 看，
-# 与固件功能无关，不随源码上传。
+# 本机 AI 用的代码书写约定与强制检查（注释长度 / 改名探测），只给本机看，
+# 与固件功能无关，不随源码上传。hooks 的 command 还含本机绝对路径。
 .github/copilot-instructions.md
+.github/hooks/

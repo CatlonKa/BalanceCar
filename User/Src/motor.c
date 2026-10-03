@@ -28,7 +28,7 @@ void motor_drive(int16_t Left, int16_t Right)
     }
 
     /* 右轮 */
-    if (right >= 0) {
+    if (Right >= 0) {
         HAL_GPIO_WritePin(PHR_GPIO_Port, PHR_Pin, GPIO_PIN_RESET);
         pwm_r = (Right > 999) ? 999 : (uint16_t)Right;
     } else {
@@ -36,6 +36,6 @@ void motor_drive(int16_t Left, int16_t Right)
         pwm_r = (-Right > 999) ? 999 : (uint16_t)(-Right);
     }
 
-    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_3, pwm_l);
-    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_4, pwm_r);
+    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, pwm_l);
+    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, pwm_r);
 }
