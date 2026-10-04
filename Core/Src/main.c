@@ -157,7 +157,14 @@ int main(void)
     //读电压和温度值
     float voltage = Analog_ReadVoltage();
     float temperature = Analog_ReadTemperature();
-    HAL_Delay(5);
+    HAL_Delay(500);
+
+    LED_W1(1);
+    LED_W2(1);
+    HAL_Delay(500);
+    LED_W1(0);
+    LED_W2(0);
+
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
