@@ -19,8 +19,6 @@ static uint8_t s_algo = CONTROL_ALGO_PID;
 
 static int16_t control_limit(float v)
 {
-    int16_t r;
-
     if (v > (float)CONTROL_PWM_MAX)
     {
         v = (float)CONTROL_PWM_MAX;
@@ -29,17 +27,7 @@ static int16_t control_limit(float v)
     {
         v = -(float)CONTROL_PWM_MAX;
     }
-    r = (int16_t)v;
-
-    if (r > 0 && r < CONTROL_DEADZONE)
-    {
-        r = CONTROL_DEADZONE;
-    }
-    else if (r < 0 && r > -CONTROL_DEADZONE)
-    {
-        r = -CONTROL_DEADZONE;
-    }
-    return r;
+    return (int16_t)v;
 }
 
 /* 采集观测量：只读已发布快照，不碰硬件 */

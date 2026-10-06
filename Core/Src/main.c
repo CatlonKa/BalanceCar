@@ -41,7 +41,11 @@
 #include "Buzzer.h"
 
 
-
+#if defined(__FPU_PRESENT) && (__FPU_PRESENT == 1)
+    // FPU 已启用
+#else
+    #error "FPU not enabled!"
+#endif
 
 
 /* USER CODE END Includes */
@@ -140,7 +144,6 @@ int main(void)
   DI_ALL_LED(0, 10, 10);
 
   imu_init();//测试用，并非真正的初始化
-  motor_drive(400, 999);
 
   /* USER CODE END 2 */
 
@@ -158,7 +161,6 @@ int main(void)
     //读电压和温度值
     float voltage = Analog_ReadVoltage();
     float temperature = Analog_ReadTemperature();
-    HAL_Delay(500);
 
 
     /* USER CODE END WHILE */
