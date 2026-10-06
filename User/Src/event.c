@@ -15,14 +15,14 @@ void event_init(void)
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
     //编码器
-    if (htim->Instance == TIM6)
+    if (htim == &htim6)
     {
         speedL = encoder_get_delta_left();
         speedR = encoder_get_delta_right();
     }
 
 
-    else if (htim->Instance == TIM5)
+    else if (htim == &htim5)
     {
         key_tick();
         car_state();

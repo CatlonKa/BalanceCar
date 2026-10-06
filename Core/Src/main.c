@@ -140,6 +140,7 @@ int main(void)
   DI_ALL_LED(0, 10, 10);
 
   imu_init();//测试用，并非真正的初始化
+  motor_drive(400, 999);
 
   /* USER CODE END 2 */
 
@@ -159,11 +160,6 @@ int main(void)
     float temperature = Analog_ReadTemperature();
     HAL_Delay(500);
 
-    LED_W1(1);
-    LED_W2(1);
-    HAL_Delay(500);
-    LED_W1(0);
-    LED_W2(0);
 
     /* USER CODE END WHILE */
 

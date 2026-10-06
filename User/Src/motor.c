@@ -36,6 +36,6 @@ void motor_drive(int16_t Left, int16_t Right)
         pwm_r = (-Right > 999) ? 999 : (uint16_t)(-Right);
     }
 
-    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, pwm_l);
+    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, pwm_l);
     __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, pwm_r);
 }

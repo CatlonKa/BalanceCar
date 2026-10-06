@@ -55,6 +55,11 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     User/Src/Analog.c
     User/Src/Buzzer.c
 
+    # Control（平衡控制：调度 + PID 串级 + LQR）
+    User/Src/Control/Control.c
+    User/Src/Control/Control_PID.c
+    User/Src/Control/Control_LQR.c
+
     # TFT LCD（ST7735S，SPI1）
     User/Src/TFT/TFT.c
     User/Src/TFT/TFT_Draw.c
@@ -89,6 +94,7 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     User/Inc
     User/Inc/TFT
     User/Inc/UI
+    User/Inc/Control
 )
 
 # Add project symbols (macros)
