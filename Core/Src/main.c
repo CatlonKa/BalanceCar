@@ -41,12 +41,6 @@
 #include "Buzzer.h"
 
 
-#if defined(__FPU_PRESENT) && (__FPU_PRESENT == 1)
-    // FPU 已启用
-#else
-    #error "FPU not enabled!"
-#endif
-
 
 /* USER CODE END Includes */
 
