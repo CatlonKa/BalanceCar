@@ -7,10 +7,11 @@
 #define PID_PITCH_KP        600.0f
 #define PID_PITCH_KD         12.0f
 
-/* 速度环 PI：输出 = 倾角给定，单位 rad */
-#define PID_SPEED_KP          0.3f
-#define PID_SPEED_KI          0.02f
-#define PID_SPEED_LIMIT     300.0f
+/* 速度环 PI：速度 -> 倾角给定，输出单位 rad */
+#define PID_SPEED_KP          0.001f
+#define PID_SPEED_KI          0.0005f
+#define PID_SPEED_ILIM        0.05f     /* 积分项上限，rad */
+#define PID_PITCH_SET_LIMIT   0.15f     /* 倾角给定上限，rad ≈ 8.6° */
 
 /* 转向环 P：抑制偏转 */
 #define PID_TURN_KP           8.0f

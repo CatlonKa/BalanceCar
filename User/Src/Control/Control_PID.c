@@ -28,9 +28,9 @@ void Control_PID_Step(const Control_Input *in, Control_Output *out)
 
     /* 速度环 PI：速度 -> 倾角给定 */
     s_speed_int += in->speed * PID_SPEED_KI * in->dt;
-    s_speed_int = pid_clamp(s_speed_int, PID_SPEED_LIMIT);
+    s_speed_int = pid_clamp(s_speed_int, PID_SPEED_ILIM);
     pitch_set = -(in->speed * PID_SPEED_KP + s_speed_int);
-    pitch_set = pid_clamp(pitch_set, PID_SPEED_LIMIT);
+    pitch_set = pid_clamp(pitch_set, PID_PITCH_SET_LIMIT);
 
     /* 直立环 PD：倾角 -> 推力 */
     thrust = (in->pitch - pitch_set) * PID_PITCH_KP + in->pitch_rate * PID_PITCH_KD;

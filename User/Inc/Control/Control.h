@@ -3,8 +3,8 @@
 
 #include <stdint.h>
 
-/* 控制周期 1 kHz：在 TIM5 中断内调用，dt 恒定 */
-#define CONTROL_DT_S            0.001f
+/* 速度采样周期（TIM6 500Hz）：数据 2ms 更新一次 */
+#define CONTROL_DT_S            0.002f
 
 /* 输出限幅，单位 = PWM 计数（TIM2 ARR = 1000） */
 #define CONTROL_PWM_MAX         999

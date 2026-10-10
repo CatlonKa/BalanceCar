@@ -135,9 +135,14 @@ int main(void)
   encoder_init();
   motor_init();
   buzzer_init();
+  buzzer_startup_tone();  /* 上电自检音 */
   DI_ALL_LED(0, 10, 10);
 
   imu_init();//测试用，并非真正的初始化
+
+  motor_drive(400, 999);
+
+
 
   /* USER CODE END 2 */
 
