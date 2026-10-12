@@ -138,10 +138,11 @@ int main(void)
   buzzer_startup_tone();  /* 上电自检音 */
   DI_ALL_LED(0, 10, 10);
 
-  imu_init();//测试用，并非真正的初始化
-
-  motor_drive(400, 999);
-
+  LED_W1(1);
+  HAL_Delay(1000);
+  LED_W1(0);
+  HAL_Delay(1000);
+  imu_init();
 
 
   /* USER CODE END 2 */
@@ -156,10 +157,10 @@ int main(void)
       KK_UI_AppUpdate();
     }
 
+    //IMU：中断只置标志，读在这里
+    imu_service();
 
-    //读电压和温度值
-    float voltage = Analog_ReadVoltage();
-    float temperature = Analog_ReadTemperature();
+
 
 
     /* USER CODE END WHILE */

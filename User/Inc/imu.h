@@ -1,6 +1,8 @@
 #ifndef __IMU_H__
 #define __IMU_H__
 
+#include <stdbool.h>
+
 #include "main.h"
 
 /* 返回码 */
@@ -78,12 +80,13 @@
 /* 0x0A FIFO_CTRL4：bit2:0=FIFO_MODE，000=Bypass（FIFO 关闭） */
 #define IMU_CFG_FIFO_CTRL4        0x00
 
-/* 0x0B/0x0C 批处理事件计数阈值 CNT_BDR_TH[10:0] */
-#define IMU_CFG_COUNTER_BDR_REG1  0x00
+/* 0x0B COUNTER_BDR_REG1：bit7=dataready_pulsed(脉冲75us) bit6=RST bit5=TRIG
+   bit2:0=CNT_BDR_TH[10:8]；0x0C COUNTER_BDR_REG2：CNT_BDR_TH[7:0] */
+#define IMU_CFG_COUNTER_BDR_REG1  0x80   /* DRDY 脉冲模式，上升沿每次新数据都能抓到 */
 #define IMU_CFG_COUNTER_BDR_REG2  0x00
 
 /* 0x0D INT1_CTRL：bit7:0 = DEN_DRDY/CNT_BDR/FIFO_FULL/FIFO_OVR/FIFO_TH/BOOT/DRDY_G/DRDY_XL */
-#define IMU_CFG_INT1_CTRL         0x00
+#define IMU_CFG_INT1_CTRL         0x03   /* 陀螺 + 加速度计数据就绪 */
 
 /* 0x0E INT2_CTRL：bit6:0 = CNT_BDR/FIFO_FULL/FIFO_OVR/FIFO_TH/DRDY_TEMP/DRDY_G/DRDY_XL */
 #define IMU_CFG_INT2_CTRL         0x00
@@ -101,16 +104,17 @@
    bit2=IF_INC bit1=保留 bit0=SW_RESET（自动清 0） */
 #define IMU_CFG_CTRL3_C           0x44   /* BDU=1，IF_INC=1 */
 
-/* 0x13 CTRL4_C：bit6=SLEEP_G bit5=INT2_on_INT1 bit4=DRDY_MASK
-   bit3=I2C_disable bit2=LPF1_SEL_G，其余保留 */
-#define IMU_CFG_CTRL4_C           0x00
+/* 0x13 CTRL4_C：bit6=SLEEP_G bit5=INT2_on_INT1 bit3=DRDY_MASK bit2=I2C_disable
+   bit1=LPF1_SEL_G；bit7/bit4/bit0 保留必须为 0 */
+#define IMU_CFG_CTRL4_C           0x2E   /* 中断并到 INT1，屏蔽未稳 DRDY，关 I2C，开陀螺 LPF1 */
 
-/* 0x14 CTRL5_C：bit5:4=ROUNDING bit3:2=ST_G bit1:0=ST_XL（自检，0=关闭） */
+/* 0x14 CTRL5_C：bit6:5=ROUNDING bit3:2=ST_G bit1:0=ST_XL（自检，0=关闭）
+   bit7/bit4 保留必须为 0 */
 #define IMU_CFG_CTRL5_C           0x00
 
 /* 0x15 CTRL6_C：bit7=TRIG_EN bit6=LVL1_EN bit5=LVL2_EN bit4=XL_HM_MODE
    bit3=USR_OFF_W bit2:0=FTYPE（陀螺 LPF1 带宽，手册表 66） */
-#define IMU_CFG_CTRL6_C           0x00
+#define IMU_CFG_CTRL6_C           0x01   /* FTYPE=001：陀螺 LPF1 212 Hz @1.66kHz */
 
 /* 0x16 CTRL7_G：bit7=G_HM_MODE bit6=HP_EN_G bit5:4=HPM_G bit3=保留(必须0)
    bit2=OIS_ON_EN bit1=USR_OFF_ON_OUT bit0=OIS_ON */
@@ -121,8 +125,8 @@
 #define IMU_CFG_CTRL8_XL          0x00
 
 /* 0x18 CTRL9_XL：bit7:5=DEN_X/Y/Z bit4=DEN_XL_G bit3=DEN_XL_EN bit2=DEN_LH
-   bit1=I3C_disable bit0=保留(必须0)；复位值就是 0xE0 */
-#define IMU_CFG_CTRL9_XL          0xE0
+   bit1=I3C_disable bit0=保留(必须0)；DEN 三位复位值即 1 */
+#define IMU_CFG_CTRL9_XL          0xE2   /* DEN 保持复位值 + 关 I3C（手册 §9.23 建议） */
 
 /* 0x19 CTRL10_C：bit5=TIMESTAMP_EN，其余保留 */
 #define IMU_CFG_CTRL10_C          0x00
@@ -170,6 +174,6 @@
 
 int  imu_init(void);
 void imu_transmit(uint8_t *data, uint16_t size);
-void imu_read_data(uint8_t *data, uint16_t size);
+bool imu_read_data(uint8_t *data, uint16_t size);
 
 #endif

@@ -54,6 +54,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     User/Src/motor.c
     User/Src/Analog.c
     User/Src/Buzzer.c
+    User/Src/Attitude.c
 
     # Control（平衡控制：调度 + PID 串级 + LQR）
     User/Src/Control/Control.c

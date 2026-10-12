@@ -9,8 +9,8 @@
 /* 输出限幅，单位 = PWM 计数（TIM2 ARR = 1000） */
 #define CONTROL_PWM_MAX         999
 
-/* 姿态是否已接入：Attitude 未实现前置 0，pitch/pitch_rate 恒为 0 */
-#define CONTROL_HAVE_ATTITUDE   0
+/* 姿态是否已接入：Attitude 已实现（互补滤波 + 零偏标定） */
+#define CONTROL_HAVE_ATTITUDE   1
 
 /* 观测量：本周期快照，由 Control_Update 采集 */
 typedef struct
