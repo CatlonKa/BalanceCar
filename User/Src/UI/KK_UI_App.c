@@ -58,7 +58,7 @@ static const KK_UI_HomeItem s_home_items[] = {
     { "状态", kk_ui_icon_status, KK_UI_APP_PAGE_STATUS },
     { "波形", kk_ui_icon_wave, KK_UI_APP_PAGE_WAVE },
     { "图片", kk_ui_icon_image, KK_UI_APP_PAGE_IMAGE },
-    { "角度", kk_ui_icon_cube, KK_UI_APP_PAGE_CUBE }
+    { "姿态", kk_ui_icon_cube, KK_UI_APP_PAGE_CUBE }
 };
 
 static const KK_UI_HomePage s_home_pages[] = {
@@ -478,10 +478,10 @@ bool KK_UI_CustomOnTick(KK_UI_PageId page, uint32_t now_ms)
     uint32_t count;
 
     if (page == KK_UI_APP_PAGE_CUBE) {
-        /* 物理 KEY1 归零：这个标志一旦置位就不再被扫描，必须消费后清零 */
+        /* 物理 KEY1 = 重新标定（与进页时的动作一致） */
         if (key1_flag != 0U) {
             key1_flag = 0U;
-            UIAttitude_ZeroYaw();
+            KK_UI_PageCube_RestartCalib();
         }
         return KK_UI_PageCube_OnTick(now_ms);
     }

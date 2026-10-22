@@ -2,7 +2,7 @@
 #include "imu.h"
 #include "Attitude.h"
 #include "main.h"
-
+#include "Control.h"
 
 int16_t speedL = 0;
 int16_t speedR = 0;
@@ -41,6 +41,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
         car_state();
         buzzer_tick();
         Attitude_Update();
+        Control_Update();
     }
 }
 

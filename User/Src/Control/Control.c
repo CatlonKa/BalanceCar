@@ -73,6 +73,15 @@ void Control_Update(void)
         return;
     }
 
+    /* 安全联锁：姿态没标定完或车身不在直立窗口就一律不驱动。
+       标定期间 GetPitch() 恒 0，等于「完美直立」，接上就会恒定推力飞车。 */
+    if (Attitude_IsCalibrating() || !Attitude_IsUpright())
+    {
+        s_algos[s_algo]->reset();    /* 顺便清积分，防退出联锁时突跳 */
+        motor_drive(0, 0);
+        return;
+    }
+
     control_collect(&in);
 
     out.left = 0.0f;

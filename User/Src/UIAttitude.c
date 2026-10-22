@@ -16,6 +16,12 @@ static bool s_ready;            /* 标定完成后为 true */
 static uint32_t s_last_cycle;   /* DWT->CYCCNT 快照 */
 static uint32_t s_seen_seq;     /* 已消费的 imu_seq，用于判断新样本 */
 
+/* 标定累加器：跨 UIAttitude_CalibStep() 多次调用保持 */
+static uint16_t s_calib_count;  /* 已累计的连续静止样本数 */
+static uint16_t s_calib_retry;  /* 总尝试次数，用于超时保护 */
+static float s_calib_sum[3];    /* 陀螺累加 */
+static float s_calib_acc[3];    /* 加速度累加 */
+
 /* 归一化三轴向量；返回是否有效（非零） */
 static bool ui_attitude_normalize(float *v)
 {
@@ -110,29 +116,49 @@ void UIAttitude_Init(void)
     s_bias[0] = 0.0f;
     s_bias[1] = 0.0f;
     s_bias[2] = 0.0f;
+    s_calib_count = 0U;
+    s_calib_retry = 0U;
     s_ready = false;
     s_last_cycle = DWT->CYCCNT;
     s_seen_seq = imu_seq;
 }
 
-void UIAttitude_Reset(void)
+void UIAttitude_CalibStart(void)
 {
     float gyro[3];
-    float acc[3] = {0.0f, 0.0f, 1.0f};   /* 初值兜底：读不到时按「已直立」处理 */
-    float sum[3] = {0.0f, 0.0f, 0.0f};
-    float acc_sum[3] = {0.0f, 0.0f, 0.0f};
-    float acc_mg;
-    float gyro_sq;
-    uint16_t count = 0U;
-    uint16_t retry = 0U;
-    uint8_t i;
+    float acc[3] = {0.0f, 0.0f, 1.0f};
 
     s_ready = false;
+    s_calib_count = 0U;
+    s_calib_retry = 0U;
+    s_calib_sum[0] = 0.0f;
+    s_calib_sum[1] = 0.0f;
+    s_calib_sum[2] = 0.0f;
+    s_calib_acc[0] = 0.0f;
+    s_calib_acc[1] = 0.0f;
+    s_calib_acc[2] = 0.0f;
 
-    /* 静止判据只认「模长 ≈ 1 g + 角速度 ≈ 0」，与姿态无关，躺着也能标 */
-    while (count < UI_ATTITUDE_CALIB_SAMPLES)
+    /* 先按当前重力给出姿态：标定期间画面就能显示正确的初始姿态，而不是单位阵 */
+    if (ui_attitude_read(gyro, acc))
     {
-        if (++retry > (UI_ATTITUDE_CALIB_SAMPLES * 10U))
+        ui_attitude_set_from_gravity(acc);
+    }
+    s_last_cycle = DWT->CYCCNT;
+    s_seen_seq = imu_seq;
+}
+
+UI_ATTITUDE_CalibStatus UIAttitude_CalibStep(uint16_t samples)
+{
+    float gyro[3];
+    float acc[3];
+    float acc_mg;
+    float gyro_sq;
+    uint16_t n;
+    uint8_t i;
+
+    for (n = 0U; n < samples; ++n)
+    {
+        if (++s_calib_retry > (UI_ATTITUDE_CALIB_SAMPLES * 10U))
         {
             break;
         }
@@ -148,48 +174,51 @@ void UIAttitude_Reset(void)
         if (acc_mg < 800.0f || acc_mg > 1200.0f ||
             gyro_sq > (float)(UI_ATTITUDE_GYRO_QUIET_LSB * UI_ATTITUDE_GYRO_QUIET_LSB))
         {
-            count = 0U;
-            sum[0] = 0.0f;
-            sum[1] = 0.0f;
-            sum[2] = 0.0f;
-            acc_sum[0] = 0.0f;
-            acc_sum[1] = 0.0f;
-            acc_sum[2] = 0.0f;
+            /* 在动：整段丢弃，动画继续转 */
+            s_calib_count = 0U;
+            s_calib_sum[0] = 0.0f;
+            s_calib_sum[1] = 0.0f;
+            s_calib_sum[2] = 0.0f;
+            s_calib_acc[0] = 0.0f;
+            s_calib_acc[1] = 0.0f;
+            s_calib_acc[2] = 0.0f;
             continue;
         }
 
         for (i = 0U; i < 3U; i++)
         {
-            sum[i] += gyro[i];
-            acc_sum[i] += acc[i];
+            s_calib_sum[i] += gyro[i];
+            s_calib_acc[i] += acc[i];
         }
-        ++count;
+        if (++s_calib_count >= UI_ATTITUDE_CALIB_SAMPLES)
+        {
+            for (i = 0U; i < 3U; i++)
+            {
+                s_bias[i] = s_calib_sum[i] / (float)s_calib_count;
+                s_calib_acc[i] /= (float)s_calib_count;
+            }
+            /* 标定完成后按平均重力重置 tilt 与 yaw */
+            ui_attitude_set_from_gravity(s_calib_acc);
+            s_last_cycle = DWT->CYCCNT;
+            s_seen_seq = imu_seq;
+            s_ready = true;
+            return UI_ATTITUDE_CALIB_DONE;
+        }
     }
 
-    if (count == 0U)
+    if (s_calib_retry > (UI_ATTITUDE_CALIB_SAMPLES * 10U))
     {
-        /* 没标成（一直在动）：零偏保持 0，但姿态照样按最后一次加速度初始化，
-           否则页面会停在一个不跟随的水平立方体上，用户看不出是没标成。 */
+        /* 一直在动或 IMU 没通：零偏保持 0，姿态沿用 CalibStart 的初始值 */
         s_bias[0] = 0.0f;
         s_bias[1] = 0.0f;
         s_bias[2] = 0.0f;
-        ui_attitude_set_from_gravity(acc);
         s_last_cycle = DWT->CYCCNT;
         s_seen_seq = imu_seq;
         s_ready = true;
-        return;
+        return UI_ATTITUDE_CALIB_FAILED;
     }
 
-    for (i = 0U; i < 3U; i++)
-    {
-        s_bias[i] = sum[i] / (float)count;
-        acc_sum[i] /= (float)count;
-    }
-
-    ui_attitude_set_from_gravity(acc_sum);
-    s_last_cycle = DWT->CYCCNT;
-    s_seen_seq = imu_seq;
-    s_ready = true;
+    return UI_ATTITUDE_CALIB_BUSY;
 }
 
 void UIAttitude_ZeroYaw(void)
@@ -205,7 +234,9 @@ void UIAttitude_ZeroYaw(void)
         return;
     }
 
-    /* 机体 Y（车尾）转到世界系 = R 的第二列；取它在水平面的方位角 */
+    /* 机体 Y（车尾）转到世界系 = R 的第二列；取它在水平面（X-Y）的方位角。
+       方位角定义 psi = atan2(yw_x, yw_y)，绕 Z 转 theta 后变为 psi - theta，
+       所以要让新朝向为零必须转 theta = +psi。 */
     yw_x = 2.0f * (s_qx * s_qy - s_qw * s_qz);
     yw_y = 1.0f - 2.0f * (s_qx * s_qx + s_qz * s_qz);
 
@@ -217,9 +248,9 @@ void UIAttitude_ZeroYaw(void)
 
     psi = atan2f(yw_x, yw_y);
 
-    /* q ← qz(-psi) ⊗ q */
-    c = cosf(-0.5f * psi);
-    s = sinf(-0.5f * psi);
+    /* q ← qz(+psi) ⊗ q；符号反了会让偏角翻倍而不是归零（按两次 = 4 倍） */
+    c = cosf(0.5f * psi);
+    s = sinf(0.5f * psi);
     {
         float w = c * s_qw - s * s_qz;
         float x = c * s_qx - s * s_qy;

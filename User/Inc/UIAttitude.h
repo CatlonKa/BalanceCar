@@ -37,11 +37,29 @@
 /* 单次积分的时间上限，防卡顿后一次转一大截 */
 #define UI_ATTITUDE_DT_MAX_S           0.05f
 
+/* 标定状态：BUSY 表示还在采样本，界面应显示进度动画 */
+typedef enum
+{
+    UI_ATTITUDE_CALIB_BUSY = 0,     /* 还在采样本 */
+    UI_ATTITUDE_CALIB_DONE,         /* 成功 */
+    UI_ATTITUDE_CALIB_FAILED        /* 超时或 IMU 没通，已按兜底姿态起步 */
+} UI_ATTITUDE_CalibStatus;
+
 /* 启用 DWT 周期计数器（用于精确 dt）；只需在 main() 里调一次 */
 void UIAttitude_Init(void);
 
-/* 静止标定 + 重置姿态：标定零偏、按当前重力初始化 tilt、yaw 归零。约 0.2 s 阻塞。 */
-void UIAttitude_Reset(void);
+/*
+ * 开始标定（非阻塞）。立即按当前重力给出姿态，所以画面一开始就是正确的初始姿态。
+ * 之后由 UIAttitude_CalibStep() 分批采样本。
+ */
+void UIAttitude_CalibStart(void);
+
+/*
+ * 推进一步标定：采 samples 个静止样本（每个间隔 1 ms，阻塞 samples 毫秒）。
+ * 返回 BUSY 表示还没完，界面可以换一帧动画再调一次。
+ * samples 取 10~25：太小则标定拖得久，太大则动画卡顿。
+ */
+UI_ATTITUDE_CalibStatus UIAttitude_CalibStep(uint16_t samples);
 
 /* yaw 归零：保留当前 tilt，把水平朝向设为参考（0） */
 void UIAttitude_ZeroYaw(void);

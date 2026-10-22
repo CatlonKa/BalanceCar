@@ -25,6 +25,6 @@
  * 数组末尾的 0 是字符串字面量终止符，同时被字体解析器当作索引表结束标志，
  * 不要删除、不要在它后面追加数据。
  */
-extern const uint8_t kk_ui_font_zh16[2677];
+extern const uint8_t kk_ui_font_zh16[2796];
 
 #endif /* KK_UI_FONT_ZH16_H */
