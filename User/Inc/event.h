@@ -21,6 +21,9 @@ extern volatile int16_t imu_gyro[3];
 extern volatile int16_t imu_acc[3];
 extern volatile uint8_t imu_drdy_flag;
 
+// 样本序号：每刷新一组新数据 +1，消费方用它判断有没有新样本
+extern volatile uint32_t imu_seq;
+
 void event_init(void);
 void car_state(void);
 void imu_service(void);

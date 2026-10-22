@@ -3,15 +3,18 @@
 #include "KK_UI_AppIcons.h"
 #include "KK_UI_Input.h"
 #include "KK_UI_Draw.h"
+#include "KK_UI_PageCube.h"
 #include "KK_UI_FontZh16.h"
+#include "UIAttitude.h"
+#include "key.h"
 #include "Analog.h"
 #include "TFT.h"
 #include "TFT_BootSplash.h"
 #include "main.h"
 
 /* KK_UI 可运行样例。只描述页面/绑定/业务事件，刷新所有权归 KK_UI（不调 TFT_Clear/Update）。
- * 页面（5）：1 首页->四个图标入口 | 2 菜单->蜂鸣器/限速/重置 | 3 状态->只读信息行
- *            4 波形(CUSTOM) | 5 图片(CUSTOM，彩色直推)
+ * 页面（6）：1 首页->五个图标入口 | 2 菜单->蜂鸣器/限速/重置 | 3 状态->只读信息行
+ *            4 波形(CUSTOM) | 5 图片(CUSTOM，彩色直推) | 6 角度(CUSTOM，立方体)
  */
 
 /* --------------------------------------------------------------- 页面编号 ---- */
@@ -21,7 +24,8 @@ enum {
     KK_UI_APP_PAGE_MENU,     /**< 普通菜单页。 */
     KK_UI_APP_PAGE_STATUS,   /**< 只读信息页。 */
     KK_UI_APP_PAGE_WAVE,     /**< 波形全屏自定义页。 */
-    KK_UI_APP_PAGE_IMAGE     /**< 图片全屏自定义页（彩色直推）。 */
+    KK_UI_APP_PAGE_IMAGE,    /**< 图片全屏自定义页（彩色直推）。 */
+    KK_UI_APP_PAGE_CUBE      /**< 姿态立方体全屏自定义页。 */
 };
 
 /* --------------------------------------------------------------- 展示状态 ---- */
@@ -43,7 +47,8 @@ static const KK_UI_PageRoute s_routes[] = {
     { KK_UI_PAGE_MENU, 0U },   /* 页面 2：菜单表下标 0。 */
     { KK_UI_PAGE_INFO, 0U },   /* 页面 3：信息表下标 0。 */
     { KK_UI_PAGE_CUSTOM, 0U }, /* 页面 4：自定义页下标 0（波形）。 */
-    { KK_UI_PAGE_CUSTOM, 1U }  /* 页面 5：自定义页下标 1（图片）。 */
+    { KK_UI_PAGE_CUSTOM, 1U }, /* 页面 5：自定义页下标 1（图片）。 */
+    { KK_UI_PAGE_CUSTOM, 2U }  /* 页面 6：自定义页下标 2（姿态）。 */
 };
 
 /* ------------------------------------------------------------------ 首页 ---- */
@@ -52,11 +57,12 @@ static const KK_UI_HomeItem s_home_items[] = {
     { "菜单", kk_ui_icon_menu, KK_UI_APP_PAGE_MENU },
     { "状态", kk_ui_icon_status, KK_UI_APP_PAGE_STATUS },
     { "波形", kk_ui_icon_wave, KK_UI_APP_PAGE_WAVE },
-    { "图片", kk_ui_icon_image, KK_UI_APP_PAGE_IMAGE }
+    { "图片", kk_ui_icon_image, KK_UI_APP_PAGE_IMAGE },
+    { "角度", kk_ui_icon_cube, KK_UI_APP_PAGE_CUBE }
 };
 
 static const KK_UI_HomePage s_home_pages[] = {
-    { s_home_items, 4U }
+    { s_home_items, 5U }
 };
 
 /* ------------------------------------------------------------------ 菜单 ---- */
@@ -219,7 +225,7 @@ static const KK_UI_App s_app = {
     .menu_page_count = sizeof(s_menu_pages) / sizeof(s_menu_pages[0]),
     .info_pages = s_info_pages,
     .info_page_count = sizeof(s_info_pages) / sizeof(s_info_pages[0]),
-    .custom_page_count = 2U,
+    .custom_page_count = 3U,
     .int_bindings = s_int_bindings,
     .int_binding_count = sizeof(s_int_bindings) / sizeof(s_int_bindings[0]),
     .bool_bindings = s_bool_bindings,
@@ -370,6 +376,13 @@ void KK_UI_CustomOnEnter(KK_UI_PageId page)
 {
     uint16_t i;
 
+    if (page == KK_UI_APP_PAGE_CUBE) {
+        /* 进入时清一次 KEY1，避免上一页残留的标志误触发归零 */
+        key1_flag = 0U;
+        KK_UI_PageCube_OnEnter();
+        return;
+    }
+
     if (page == KK_UI_APP_PAGE_IMAGE) {
         /*
          * 让核心放手：它的帧缓冲只有黑白两色，画不出彩色照片，
@@ -406,6 +419,11 @@ void KK_UI_CustomOnEnter(KK_UI_PageId page)
 
 void KK_UI_CustomOnLeave(KK_UI_PageId page)
 {
+    if (page == KK_UI_APP_PAGE_CUBE) {
+        KK_UI_PageCube_OnLeave();
+        return;
+    }
+
     /* 波形页没有需要释放的资源。 */
     if (page == KK_UI_APP_PAGE_IMAGE) {
         /*
@@ -419,6 +437,11 @@ void KK_UI_CustomOnLeave(KK_UI_PageId page)
 
 void KK_UI_CustomOnInput(KK_UI_PageId page, KK_UI_InputEvent event)
 {
+    if (page == KK_UI_APP_PAGE_CUBE) {
+        KK_UI_PageCube_OnInput(event);
+        return;
+    }
+
     if (page == KK_UI_APP_PAGE_IMAGE) {
         /*
          * 上/下拨轮和确定键都是「下一张」，方向与首页轮播保持一致的手感
@@ -453,6 +476,15 @@ bool KK_UI_CustomOnTick(KK_UI_PageId page, uint32_t now_ms)
 {
     uint32_t missed;
     uint32_t count;
+
+    if (page == KK_UI_APP_PAGE_CUBE) {
+        /* 物理 KEY1 归零：这个标志一旦置位就不再被扫描，必须消费后清零 */
+        if (key1_flag != 0U) {
+            key1_flag = 0U;
+            UIAttitude_ZeroYaw();
+        }
+        return KK_UI_PageCube_OnTick(now_ms);
+    }
 
     if (page == KK_UI_APP_PAGE_IMAGE) {
         kk_ui_image_flush();
@@ -496,6 +528,11 @@ void KK_UI_CustomOnDraw(KK_UI_PageId page, int16_t x_offset, int16_t clip_x,
     /* 核心是否正在做局部重绘（是则裁剪窗口已由核心按脏矩形设好）。 */
     bool partial = KK_UI_GetDirtyRect(NULL, NULL, NULL, NULL);
     uint16_t i;
+
+    if (page == KK_UI_APP_PAGE_CUBE) {
+        KK_UI_PageCube_OnDraw(x_offset, clip_x, clip_width);
+        return;
+    }
 
     if (page == KK_UI_APP_PAGE_IMAGE) {
         /*

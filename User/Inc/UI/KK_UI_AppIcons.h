@@ -15,4 +15,7 @@ extern const uint8_t kk_ui_icon_wave[128];
 /* 图片页图标：相框 + 太阳 + 两座山，32x32。 */
 extern const uint8_t kk_ui_icon_image[128];
 
+/* 姿态页图标：等轴测立方体 + 三条带箭头的坐标轴，32x32。 */
+extern const uint8_t kk_ui_icon_cube[128];
+
 #endif /* KK_UI_APPICONS_H */

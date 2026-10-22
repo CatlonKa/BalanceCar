@@ -32,6 +32,8 @@
 #include "LED.h"
 #include "TFT_Display.h"
 #include "imu.h"
+#include "Attitude.h"
+#include "UIAttitude.h"
 #include "encoder.h"
 #include "event.h"
 #include "key.h"
@@ -138,11 +140,9 @@ int main(void)
   buzzer_startup_tone();  /* 上电自检音 */
   DI_ALL_LED(0, 10, 10);
 
-  LED_W1(1);
-  HAL_Delay(1000);
-  LED_W1(0);
-  HAL_Delay(1000);
   imu_init();
+  Attitude_Init();  /* 零偏标定，必须在 imu_init() 之后 */
+  UIAttitude_Init();/* 界面姿态：只启用 DWT 周期计数，标定在进入姿态页时做 */
 
 
   /* USER CODE END 2 */

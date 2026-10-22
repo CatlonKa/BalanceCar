@@ -11,9 +11,13 @@ uint8_t car_run = 1;
 volatile uint8_t car_state_changed = 0;
 
 /* IMU 原始快照：主循环读（非中断上下文），顺序 X/Y/Z，单位 LSB */
-volatile int16_t imu_gyro[3];
-volatile int16_t imu_acc[3];
-volatile uint8_t imu_drdy_flag;
+volatile int16_t imu_gyro[3];//陀螺仪原始数据
+volatile int16_t imu_acc[3];//加速度计原始数据
+volatile uint8_t imu_drdy_flag;//数据就绪标志
+
+/* 样本序号：每刷新一组新数据 +1。消费方比对这个值就能判断
+   「有没有新样本」，不需要自己再读一次 SPI。 */
+volatile uint32_t imu_seq;
 
 void event_init(void)
 {
@@ -57,6 +61,7 @@ static void imu_update(void)
         imu_gyro[i] = (int16_t)((uint16_t)buf[2U * i + 1U] << 8 | buf[2U * i]);
         imu_acc[i] = (int16_t)((uint16_t)buf[6U + 2U * i + 1U] << 8 | buf[6U + 2U * i]);
     }
+    ++imu_seq;
 }
 
 /* 数据就绪中断：只置标志，读 SPI 交给主循环（ISR 内 tick 冻结，超时失效） */

@@ -1,10 +1,7 @@
 #include "Control.h"
 #include "event.h"
 #include "motor.h"
-
-#if CONTROL_HAVE_ATTITUDE
 #include "Attitude.h"
-#endif
 
 extern const Control_Algo Control_AlgoPID;
 extern const Control_Algo Control_AlgoLQR;
@@ -33,13 +30,8 @@ static int16_t control_limit(float v)
 /* 采集观测量：只读已发布快照，不碰硬件 */
 static void control_collect(Control_Input *in)
 {
-#if CONTROL_HAVE_ATTITUDE
     in->pitch = Attitude_GetPitch();
     in->pitch_rate = Attitude_GetPitchRate();
-#else
-    in->pitch = 0.0f;
-    in->pitch_rate = 0.0f;
-#endif
     in->speed = 0.5f * (float)(speedL + speedR);
     in->turn_rate = 0.5f * (float)(speedL - speedR);
     in->dt = CONTROL_DT_S;

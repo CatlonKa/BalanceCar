@@ -55,6 +55,8 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     User/Src/Analog.c
     User/Src/Buzzer.c
     User/Src/Attitude.c
+    User/Src/UIAttitude.c
+    # User/Src/ImuTest.c   /* 临时测试模块，需要时取消注释 */
 
     # Control（平衡控制：调度 + PID 串级 + LQR）
     User/Src/Control/Control.c
@@ -87,6 +89,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     User/Src/UI/KK_UI_App.c
     User/Src/UI/KK_UI_AppIcons.c
     User/Src/UI/KK_UI_Input.c
+    User/Src/UI/KK_UI_PageCube.c
 )
 
 # Add include paths
