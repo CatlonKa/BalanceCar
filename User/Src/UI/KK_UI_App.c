@@ -6,6 +6,9 @@
 #include "KK_UI_PageCube.h"
 #include "KK_UI_FontZh16.h"
 #include "UIAttitude.h"
+#include "Attitude.h"
+#include "Buzzer.h"
+#include "Control.h"
 #include "key.h"
 #include "Analog.h"
 #include "TFT.h"
@@ -13,8 +16,9 @@
 #include "main.h"
 
 /* KK_UI 可运行样例。只描述页面/绑定/业务事件，刷新所有权归 KK_UI（不调 TFT_Clear/Update）。
- * 页面（6）：1 首页->五个图标入口 | 2 菜单->蜂鸣器/限速/重置 | 3 状态->只读信息行
- *            4 波形(CUSTOM) | 5 图片(CUSTOM，彩色直推) | 6 角度(CUSTOM，立方体)
+ * 页面（8）：1 首页->五个图标入口 | 2 菜单->蜂鸣器/算法/方式/限速/亮度/重置
+ *            3 状态->只读信息行 | 4 波形(CUSTOM) | 5 图片(CUSTOM，彩色直推)
+ *            6 角度(CUSTOM，立方体) | 7 算法子菜单 | 8 方式子菜单
  */
 
 /* --------------------------------------------------------------- 页面编号 ---- */
@@ -25,18 +29,22 @@ enum {
     KK_UI_APP_PAGE_STATUS,   /**< 只读信息页。 */
     KK_UI_APP_PAGE_WAVE,     /**< 波形全屏自定义页。 */
     KK_UI_APP_PAGE_IMAGE,    /**< 图片全屏自定义页（彩色直推）。 */
-    KK_UI_APP_PAGE_CUBE      /**< 姿态立方体全屏自定义页。 */
+    KK_UI_APP_PAGE_CUBE,     /**< 姿态立方体全屏自定义页。 */
+    KK_UI_APP_PAGE_ALGO,     /**< 控制算法子菜单。 */
+    KK_UI_APP_PAGE_MODE      /**< 控制方式子菜单。 */
 };
 
 /* --------------------------------------------------------------- 展示状态 ---- */
 
 KK_UI_AppState kk_ui_app_state = {
-    .buzzer_on = true,
+    .buzzer_on = (BUZZER_DEFAULT_ENABLED != 0),
     .speed_limit = 60,
     .backlight_level = 60,   /* 默认 60% 亮度，比满亮度省电且不刺眼 */
+    .ctrl_algo = CONTROL_ALGO_PID,
+    .ctrl_mode = CONTROL_MODE_AUTO,
     /* 仅上电占位；屏幕亮起后由 kk_ui_app_update_voltage() 每 500 ms 覆写。 */
     .voltage_text = "12.6V",
-    .angle_text = "0.0",
+    .angle_text = "0.0度",
     .speed_text = "0"
 };
 
@@ -48,7 +56,9 @@ static const KK_UI_PageRoute s_routes[] = {
     { KK_UI_PAGE_INFO, 0U },   /* 页面 3：信息表下标 0。 */
     { KK_UI_PAGE_CUSTOM, 0U }, /* 页面 4：自定义页下标 0（波形）。 */
     { KK_UI_PAGE_CUSTOM, 1U }, /* 页面 5：自定义页下标 1（图片）。 */
-    { KK_UI_PAGE_CUSTOM, 2U }  /* 页面 6：自定义页下标 2（姿态）。 */
+    { KK_UI_PAGE_CUSTOM, 2U }, /* 页面 6：自定义页下标 2（姿态）。 */
+    { KK_UI_PAGE_MENU, 1U },   /* 页面 7：控制算法子菜单。 */
+    { KK_UI_PAGE_MENU, 2U }    /* 页面 8：控制方式子菜单。 */
 };
 
 /* ------------------------------------------------------------------ 首页 ---- */
@@ -69,17 +79,36 @@ static const KK_UI_HomePage s_home_pages[] = {
 
 static const KK_UI_MenuItem s_menu_items[] = {
     { "蜂鸣器", KK_UI_MENU_BOOL, 0U },
+    { "控制算法", KK_UI_MENU_PAGE, KK_UI_APP_PAGE_ALGO },
+    { "控制方式", KK_UI_MENU_PAGE, KK_UI_APP_PAGE_MODE },
     { "限速", KK_UI_MENU_INT, 0U },
     { "亮度", KK_UI_MENU_INT, 1U },
     { "重置", KK_UI_MENU_CONFIRM, 0U }
 };
 
-/* 菜单项状态表：每项 2 bit（00 正常 / 01 隐藏 / 10 禁用）；4 项 = 1 字节。
+/* 菜单项状态表：每项 2 bit（00 正常 / 01 隐藏 / 10 禁用）；6 项 = 2 字节。
  * 用 KK_UI_SetMenuItemState() 改，改完调 KK_UI_Invalidate()。 */
-static uint8_t s_menu_item_states[(4U + 3U) / 4U];
+static uint8_t s_menu_item_states[(6U + 3U) / 4U];
+
+/* 子菜单：选中项用「禁用」标记，于是灰掉的那行就是当前生效的选项 */
+static const KK_UI_MenuItem s_algo_items[] = {
+    { "PID", KK_UI_MENU_ACTION, KK_UI_APP_EVENT_ALGO_PID },
+    { "LQR", KK_UI_MENU_ACTION, KK_UI_APP_EVENT_ALGO_LQR }
+};
+
+static uint8_t s_algo_item_states[(2U + 3U) / 4U];
+
+static const KK_UI_MenuItem s_mode_items[] = {
+    { "自动", KK_UI_MENU_ACTION, KK_UI_APP_EVENT_MODE_AUTO },
+    { "手动", KK_UI_MENU_ACTION, KK_UI_APP_EVENT_MODE_MANUAL }
+};
+
+static uint8_t s_mode_item_states[(2U + 3U) / 4U];
 
 static const KK_UI_MenuPage s_menu_pages[] = {
-    { "菜单", s_menu_items, s_menu_item_states, 4U }
+    { "菜单", s_menu_items, s_menu_item_states, 6U },
+    { "控制算法", s_algo_items, s_algo_item_states, 2U },
+    { "控制方式", s_mode_items, s_mode_item_states, 2U }
 };
 
 /* -------------------------------------------------------------- 信息页 ---- */
@@ -175,6 +204,91 @@ static void kk_ui_app_update_voltage(uint32_t now_ms)
         }
     }
     KK_UI_Invalidate();
+}
+
+/* ------------------------------------------------------ 状态页角度实时数据 ---- */
+
+/* 角度刷新周期：姿态在 1 kHz 更新，5 Hz 足够看清数值又不会刷屏 */
+#define KK_UI_APP_ANGLE_PERIOD_MS 200U
+#define KK_UI_APP_RAD_TO_DEG 57.29578f
+
+/* 单位字：字模里没有 °（U+00B0），用已有的「度」 */
+static const char s_angle_unit[] = "度";
+
+/** 下一次允许刷新角度的时刻；0 表示还没刷新过，第一次调用立即生效。 */
+static uint32_t s_angle_next_ms;
+
+/* 拼出「-12.3度」：一位小数，整数运算，不用 printf */
+static void kk_ui_app_format_angle(char *out, int32_t tenths)
+{
+    uint32_t magnitude;
+    uint32_t pos = 0U;
+    uint32_t i;
+
+    if (tenths < 0) {
+        out[pos] = '-';
+        ++pos;
+        magnitude = (uint32_t)(-tenths);
+    } else {
+        magnitude = (uint32_t)tenths;
+    }
+    pos += kk_ui_app_put_u32(&out[pos], magnitude / 10U);
+    out[pos] = '.';
+    ++pos;
+    out[pos] = (char)('0' + (magnitude % 10U));
+    ++pos;
+    for (i = 0U; s_angle_unit[i] != '\0'; ++i) {
+        out[pos] = s_angle_unit[i];
+        ++pos;
+    }
+    out[pos] = '\0';
+}
+
+/* 把俯仰角写进状态页。同样只在文本变化时重绘。 */
+static void kk_ui_app_update_angle(uint32_t now_ms)
+{
+    char text[sizeof(kk_ui_app_state.angle_text)];
+    float degrees;
+    uint32_t i;
+
+    if (s_angle_next_ms != 0U &&
+        (int32_t)(now_ms - s_angle_next_ms) < 0) {
+        return;
+    }
+    s_angle_next_ms = now_ms + KK_UI_APP_ANGLE_PERIOD_MS;
+
+    /* 只显示俯仰角（绕 pitch 轴），正值前倾；+0.5 四舍五入到 0.1° */
+    degrees = Attitude_GetPitch() * KK_UI_APP_RAD_TO_DEG;
+    kk_ui_app_format_angle(text,
+                           (int32_t)(degrees * 10.0f + (degrees >= 0.0f ? 0.5f : -0.5f)));
+
+    if (kk_ui_app_text_equal(text, kk_ui_app_state.angle_text)) {
+        return;
+    }
+    for (i = 0U; i < sizeof(text); ++i) {
+        kk_ui_app_state.angle_text[i] = text[i];
+        if (text[i] == '\0') {
+            break;
+        }
+    }
+    KK_UI_Invalidate();
+}
+
+/* 把当前选项在子菜单里标成禁用：灰掉的那行就是正在生效的 */
+static void kk_ui_app_sync_choice_states(void)
+{
+    uint16_t i;
+
+    for (i = 0U; i < 2U; ++i) {
+        (void)KK_UI_SetMenuItemState(
+            KK_UI_APP_PAGE_ALGO, i,
+            (i == (uint16_t)kk_ui_app_state.ctrl_algo) ?
+            KK_UI_ITEM_DISABLED : KK_UI_ITEM_NORMAL);
+        (void)KK_UI_SetMenuItemState(
+            KK_UI_APP_PAGE_MODE, i,
+            (i == (uint16_t)kk_ui_app_state.ctrl_mode) ?
+            KK_UI_ITEM_DISABLED : KK_UI_ITEM_NORMAL);
+    }
 }
 
 /* -------------------------------------------------------------- 变量绑定 ---- */
@@ -636,6 +750,11 @@ KK_UI_Status KK_UI_AppInit(void)
     KK_UI_InputReset();
     status = KK_UI_Init(&s_app);
 
+    /* 蜂鸣器硬件标志与界面状态对齐：默认关由 BUZZER_DEFAULT_ENABLED 决定 */
+    buzzer_set_enabled(kk_ui_app_state.buzzer_on);
+    /* 子菜单的「当前选项」标记：首次进入前就得是对的 */
+    kk_ui_app_sync_choice_states();
+
     /* 立刻按当前阶段设一次背光，否则 TFT_DriverInit() 的满亮度会持续到首次 AppUpdate。 */
     s_ui_state = KK_UI_InputWheelUsable() ? 1U : 2U;
     kk_ui_app_apply_backlight();
@@ -664,8 +783,9 @@ void KK_UI_AppUpdate(void)
         return;
     }
 
-    /* 状态页的电压是唯一一份需要周期性刷新的业务数据。 */
+    /* 状态页的电压与角度是需要周期性刷新的业务数据。 */
     kk_ui_app_update_voltage(now);
+    kk_ui_app_update_angle(now);
 
     input = KK_UI_InputRead(now);
 
@@ -684,6 +804,23 @@ void KK_UI_AppUpdate(void)
         switch ((KK_UI_AppEvent)event) {
         case KK_UI_APP_EVENT_BUZZER_CHANGED:
             /* 业务模块在这里同步蜂鸣器硬件，真正停转前不要动电机。 */
+            buzzer_set_enabled(kk_ui_app_state.buzzer_on);
+            break;
+        case KK_UI_APP_EVENT_ALGO_PID:
+        case KK_UI_APP_EVENT_ALGO_LQR:
+            kk_ui_app_state.ctrl_algo = (event == KK_UI_APP_EVENT_ALGO_PID) ?
+                                        CONTROL_ALGO_PID : CONTROL_ALGO_LQR;
+            Control_SetAlgo((uint8_t)kk_ui_app_state.ctrl_algo);
+            kk_ui_app_sync_choice_states();
+            KK_UI_Invalidate();
+            break;
+        case KK_UI_APP_EVENT_MODE_AUTO:
+        case KK_UI_APP_EVENT_MODE_MANUAL:
+            kk_ui_app_state.ctrl_mode = (event == KK_UI_APP_EVENT_MODE_AUTO) ?
+                                        CONTROL_MODE_AUTO : CONTROL_MODE_MANUAL;
+            Control_SetMode((uint8_t)kk_ui_app_state.ctrl_mode);
+            kk_ui_app_sync_choice_states();
+            KK_UI_Invalidate();
             break;
         case KK_UI_APP_EVENT_LIMIT_CHANGED:
             /* 业务模块在这里同步限速，并按需要持久化。 */

@@ -41,7 +41,7 @@
 #include "uart.h"
 #include "Analog.h"
 #include "Buzzer.h"
-
+#include "Control.h"
 
 
 /* USER CODE END Includes */
@@ -143,7 +143,7 @@ int main(void)
   imu_init();
   Attitude_Init();  /* 零偏标定，必须在 imu_init() 之后 */
   UIAttitude_Init();/* 界面姿态：只启用 DWT 周期计数，标定在进入姿态页时做 */
-
+  Control_Init();  /* PID/LQR 控制器：只清零，参数在进入控制页时加载 */
 
   /* USER CODE END 2 */
 

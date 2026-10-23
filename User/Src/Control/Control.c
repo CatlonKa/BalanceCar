@@ -13,6 +13,7 @@ static const Control_Algo *const s_algos[CONTROL_ALGO_COUNT] =
 };
 
 static uint8_t s_algo = CONTROL_ALGO_PID;
+static uint8_t s_mode = CONTROL_MODE_AUTO;
 
 static int16_t control_limit(float v)
 {
@@ -62,6 +63,21 @@ uint8_t Control_GetAlgo(void)
     return s_algo;
 }
 
+void Control_SetMode(uint8_t mode)
+{
+    if (mode > CONTROL_MODE_MANUAL)
+    {
+        return;
+    }
+    s_mode = mode;
+    s_algos[s_algo]->reset();
+}
+
+uint8_t Control_GetMode(void)
+{
+    return s_mode;
+}
+
 void Control_Update(void)
 {
     Control_Input in;
@@ -69,6 +85,13 @@ void Control_Update(void)
 
     if (!car_run)                 /* 车轮归 UI：不参与控制 */
     {
+        motor_drive(0, 0);
+        return;
+    }
+
+    if (s_mode != CONTROL_MODE_AUTO)   /* 手动：遥控输入还没接，先不驱动 */
+    {
+        s_algos[s_algo]->reset();
         motor_drive(0, 0);
         return;
     }

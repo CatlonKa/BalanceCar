@@ -3,6 +3,14 @@
 
 #include "main.h"
 #include "tim.h"
+#include <stdbool.h>
+
+/* 全局使能默认值：0 = 上电静音，改这里或调 buzzer_set_enabled() */
+#define BUZZER_DEFAULT_ENABLED  0
+
+/* 使能标志：false 时 buzzer_on()/buzzer_startup_tone() 全部直接返回 */
+void buzzer_set_enabled(bool enable);
+bool buzzer_is_enabled(void);
 
 void buzzer_init(void);
 void buzzer_on(uint16_t frequency, uint16_t volume);

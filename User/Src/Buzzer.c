@@ -1,5 +1,8 @@
 #include "Buzzer.h"
 
+/* 使能标志：false 时所有发声入口都直接返回，不碰 TIM9 */
+static bool s_enabled = (BUZZER_DEFAULT_ENABLED != 0);
+
 void buzzer_init(void)
 {
     __HAL_TIM_SET_COMPARE(&htim9, TIM_CHANNEL_1, 0);
@@ -8,6 +11,10 @@ void buzzer_init(void)
 
 void buzzer_on(uint16_t frequency, uint16_t volume)
 {
+    if (!s_enabled)
+    {
+        return;
+    }
     volume = (volume > 100) ? 100 : volume;
     if (frequency == 0) { buzzer_off(); return; }
     uint16_t arr = 1000000 / frequency;
@@ -37,8 +44,27 @@ static volatile uint8_t s_phase = (uint8_t)BUZZER_TONE_STEPS; /* 初值=空闲�
 static uint16_t s_left_ms;      /* 本段剩余毫秒，0 = 该开新段 */
 static uint16_t s_beep_ms;      /* 本声已发声毫秒，驱动包络/抖动/摆动 */
 
+void buzzer_set_enabled(bool enable)
+{
+    s_enabled = enable;
+    if (!enable)
+    {
+        s_phase = (uint8_t)BUZZER_TONE_STEPS;   /* 中途关掉：直接终止自检音序列 */
+        buzzer_off();
+    }
+}
+
+bool buzzer_is_enabled(void)
+{
+    return s_enabled;
+}
+
 void buzzer_startup_tone(void)
 {
+    if (!s_enabled)
+    {
+        return;
+    }
     s_phase = 0U;
     s_left_ms = 0U;
     s_beep_ms = 0U;

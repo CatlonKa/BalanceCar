@@ -3,11 +3,15 @@
 
 #include <stdint.h>
 
-/* 速度采样周期（TIM6 500Hz）：数据 2ms 更新一次 */
-#define CONTROL_DT_S            0.002f
+/* 控制周期（TIM5 1kHz）；速度量 2ms 刷新一次，零阶保持 */
+#define CONTROL_DT_S            0.001f
 
 /* 输出限幅，单位 = PWM 计数（TIM2 ARR = 1000） */
 #define CONTROL_PWM_MAX         999
+
+/* 控制方式：自动巡线 / 手动遥控。手动输入还没接，切过去就不驱动 */
+#define CONTROL_MODE_AUTO       0
+#define CONTROL_MODE_MANUAL     1
 
 /* 观测量：本周期快照，由 Control_Update 采集 */
 typedef struct
@@ -47,5 +51,7 @@ void Control_Reset(void);
 void Control_Update(void);
 void Control_SetAlgo(uint8_t idx);
 uint8_t Control_GetAlgo(void);
+void Control_SetMode(uint8_t mode);
+uint8_t Control_GetMode(void);
 
 #endif
