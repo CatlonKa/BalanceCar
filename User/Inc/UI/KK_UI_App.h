@@ -24,10 +24,8 @@ typedef enum {
     KK_UI_APP_EVENT_LIMIT_CHANGED,      /**< 限速被修改。 */
     KK_UI_APP_EVENT_BACKLIGHT_CHANGED,  /**< 背光亮度被修改。 */
     KK_UI_APP_EVENT_RESET_CONFIRMED,    /**< 用户确认了重置。 */
-    KK_UI_APP_EVENT_ALGO_PID,           /**< 选中 PID。 */
-    KK_UI_APP_EVENT_ALGO_LQR,           /**< 选中 LQR。 */
-    KK_UI_APP_EVENT_MODE_AUTO,          /**< 选中自动巡线。 */
-    KK_UI_APP_EVENT_MODE_MANUAL         /**< 选中手动遥控。 */
+    KK_UI_APP_EVENT_ALGO_CHANGED,       /**< 控制算法被修改。 */
+    KK_UI_APP_EVENT_MODE_CHANGED        /**< 控制方式被修改。 */
 } KK_UI_AppEvent;
 
 /**
@@ -40,8 +38,8 @@ typedef struct {
     bool buzzer_on;            /**< 蜂鸣器开关，绑定到菜单项。 */
     int32_t speed_limit;       /**< 限速百分比，绑定到菜单项。 */
     int32_t backlight_level;   /**< 背光亮度百分比（0～100），绑定到菜单项。 */
-    int32_t ctrl_algo;         /**< 控制算法：0=PID 1=LQR，子菜单里灰掉的那项。 */
-    int32_t ctrl_mode;         /**< 控制方式：0=自动 1=手动，子菜单里灰掉的那项。 */
+    int32_t algo_index;        /**< 控制算法下标，绑定到多选一菜单项。 */
+    bool mode_manual;          /**< true = 手动遥控，false = 自动巡线。 */
     char voltage_text[12];     /**< 状态页“电压”一行的值。 */
     char angle_text[12];       /**< 状态页“角度”一行的值。 */
     char speed_text[12];       /**< 状态页“速度”一行的值。 */

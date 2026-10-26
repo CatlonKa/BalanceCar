@@ -150,6 +150,15 @@ static KK_UI_Status kk_ui_validate_pages(const KK_UI_App *app)
 #else
                 return kk_ui_config_error(0U, j);
 #endif
+            case KK_UI_MENU_ENUM:
+#if KK_UI_ENABLE_ENUM_EDITOR
+                if (item->ref >= app->enum_binding_count) {
+                    return kk_ui_config_error(0U, j);
+                }
+                break;
+#else
+                return kk_ui_config_error(0U, j);
+#endif
             case KK_UI_MENU_CONFIRM:
 #if KK_UI_ENABLE_CONFIRM
                 if (item->ref >= app->confirm_desc_count) {
@@ -197,6 +206,27 @@ static KK_UI_Status kk_ui_validate_bindings(const KK_UI_App *app)
             return kk_ui_config_error(0U, i);
         }
     }
+    for (i = 0U; i < app->enum_binding_count; ++i) {
+        const KK_UI_EnumBinding *binding = &app->enum_bindings[i];
+        uint16_t j;
+        if (binding->title == NULL || binding->value == NULL ||
+            binding->options == NULL || binding->option_count == 0U) {
+            return kk_ui_config_error(0U, i);
+        }
+        /* 超过画面上限的选项永远选不到，当作配置错误暴露出来。 */
+        if (binding->option_count > (uint16_t)KK_UI_ENUM_MAX_OPTIONS) {
+            return kk_ui_config_error(0U, i);
+        }
+        if (*binding->value < 0 ||
+            *binding->value >= (int32_t)binding->option_count) {
+            return kk_ui_config_error(0U, i);
+        }
+        for (j = 0U; j < binding->option_count; ++j) {
+            if (binding->options[j] == NULL) {
+                return kk_ui_config_error(0U, i);
+            }
+        }
+    }
     for (i = 0U; i < app->confirm_desc_count; ++i) {
         if (app->confirm_descs[i].text == NULL) {
             return kk_ui_config_error(0U, i);
@@ -219,6 +249,7 @@ static KK_UI_Status kk_ui_validate(const KK_UI_App *app)
         (app->info_page_count != 0U && app->info_pages == NULL) ||
         (app->int_binding_count != 0U && app->int_bindings == NULL) ||
         (app->bool_binding_count != 0U && app->bool_bindings == NULL) ||
+        (app->enum_binding_count != 0U && app->enum_bindings == NULL) ||
         (app->confirm_desc_count != 0U && app->confirm_descs == NULL)) {
         return kk_ui_config_error(0U, 0U);
     }
@@ -500,6 +531,22 @@ KK_UI_Status KK_UI_OpenBoolEditor(uint16_t binding_index)
 #endif
 }
 
+KK_UI_Status KK_UI_OpenEnumEditor(uint16_t binding_index)
+{
+    if (kk_ui.initialized == 0U) return KK_UI_NOT_INITIALIZED;
+#if KK_UI_ENABLE_ENUM_EDITOR
+    if (binding_index >= kk_ui.app->enum_binding_count)
+        return KK_UI_INVALID_ARGUMENT;
+    if (KK_UI_DialogActive()) return KK_UI_BUSY;
+    if (kk_ui.in_callback != 0U)
+        return KK_UI_Defer(KK_UI_DEFER_ENUM, binding_index, NULL, 0U, 0U);
+    return KK_UI_DialogOpenEnum(binding_index, kk_ui.last_update);
+#else
+    (void)binding_index;
+    return KK_UI_UNSUPPORTED;
+#endif
+}
+
 KK_UI_Status KK_UI_OpenConfirm(uint16_t confirm_index)
 {
     if (kk_ui.initialized == 0U) return KK_UI_NOT_INITIALIZED;
@@ -624,6 +671,9 @@ void KK_UI_ApplyDeferred(uint32_t now)
         break;
     case KK_UI_DEFER_BOOL:
         (void)KK_UI_DialogOpenBool(request.ref, now);
+        break;
+    case KK_UI_DEFER_ENUM:
+        (void)KK_UI_DialogOpenEnum(request.ref, now);
         break;
     case KK_UI_DEFER_CONFIRM:
         (void)KK_UI_DialogOpenConfirm(request.ref, now);

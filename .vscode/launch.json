@@ -2,10 +2,56 @@
     // 使用 IntelliSense 了解相关属性。 
     // 悬停以查看现有属性的描述。
     // 欲了解更多信息，请访问: https://go.microsoft.com/fwlink/?linkid=830387
+    //
+    // 操作方式（只用 VS Code 内置键，与 tasks.json 的说法一致）
+    //   Ctrl+Shift+B   构建 + 烧录 + 校验 + 复位，不进调试会话（任务在 tasks.json）
+    //   F5             构建 + 烧录 + 停在 main（走下面第一条配置）
+    //   左侧「运行和调试」下拉框可换第二条（仅附加，不下载）
+    //   Ctrl+Shift+P → Run Task   烧录（不构建）/ 全片擦除 / 探针自检
+    //
+    // ⚠️ 下面三条配置都要独占 SWD，同一时刻只能有一条在跑
+    // ⚠️ tasks.json 的烧录是 reset exit（立即运行）；本文件 launch 是停在 main
     "version": "0.2.0",
     "configurations": [
-        
         {
+            // 日常用这个：构建 → 烧录 → 停在 main
+            // OpenOCD 由 cortex-debug 自己拉起，不需要预先启动 gdbserver
+            "name": "OpenOCD: 构建+烧录+调试",
+            "type": "cortex-debug",
+            "request": "launch",
+            "servertype": "openocd",
+            "cwd": "${workspaceFolder}",
+            "executable": "build/Debug/Balance.elf",
+            "serverpath": "D:/OpenOCD/bin/openocd.exe",
+            "searchDir": ["D:/OpenOCD/share/openocd/scripts"],
+            "configFiles": ["interface/stlink.cfg", "target/stm32f4x.cfg"],
+            "device": "STM32F407VE",
+            "runToEntryPoint": "main",
+            "preLaunchTask": "Build",
+            // 本机 arm-none-eabi-gdb 不在 PATH，必须给全路径
+            "gdbPath": "${env:LOCALAPPDATA}/stm32cube/bundles/gnu-gdb-for-stm32/13.3.1+st.10/bin/arm-none-eabi-gdb.exe",
+            "objdumpPath": "${env:LOCALAPPDATA}/stm32cube/bundles/gnu-tools-for-stm32/13.3.1+st.9/bin/arm-none-eabi-objdump.exe",
+            // 缺这个文件只是少一个外设视图，不影响调试
+            "svdFile": "${env:LOCALAPPDATA}/stm32cube/packs/STMicroelectronics/stm32f4xx_dfp/1.2.0/SVD/STM32F407.svd"
+        },
+        {
+            // 不重烧，直接连到正在跑的芯片。halt 后可以读变量/寄存器
+            "name": "OpenOCD: 仅附加（不下载）",
+            "type": "cortex-debug",
+            "request": "attach",
+            "servertype": "openocd",
+            "cwd": "${workspaceFolder}",
+            "executable": "build/Debug/Balance.elf",
+            "serverpath": "D:/OpenOCD/bin/openocd.exe",
+            "searchDir": ["D:/OpenOCD/share/openocd/scripts"],
+            "configFiles": ["interface/stlink.cfg", "target/stm32f4x.cfg"],
+            "device": "STM32F407VE",
+            "gdbPath": "${env:LOCALAPPDATA}/stm32cube/bundles/gnu-gdb-for-stm32/13.3.1+st.10/bin/arm-none-eabi-gdb.exe",
+            "objdumpPath": "${env:LOCALAPPDATA}/stm32cube/bundles/gnu-tools-for-stm32/13.3.1+st.9/bin/arm-none-eabi-objdump.exe",
+            "svdFile": "${env:LOCALAPPDATA}/stm32cube/packs/STMicroelectronics/stm32f4xx_dfp/1.2.0/SVD/STM32F407.svd"
+        },
+        {
+            // ST 官方 GDB Server（保留作对照）。与上面两条互斥，不能同时跑
             "type": "stlinkgdbtarget",
             "request": "launch",
             "name": "STM32Cube: Launch ST-Link GDB Server",

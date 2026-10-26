@@ -86,6 +86,24 @@
  */
 #define KK_UI_DIALOG_TOP          49
 
+/*
+ * 多选一弹框的几何。
+ *
+ * 弹框高度随选项数伸缩，所以纵向位置不再固定为 KK_UI_DIALOG_TOP：
+ * 太高时整体上移，保证底边不越出画布。
+ *
+ * 选项框是方角矩形，且上下相邻两框共用一条边（PITCH 比框高少 1），
+ * 整列看起来是一根连起来的分段表；底部「确定」用圆角框，与列表区分开。
+ */
+#define KK_UI_ENUM_MAX_OPTIONS    6U
+#define KK_UI_ENUM_ROW_HEIGHT     18  /**< 框高，含上下两条边；内部可用 16 像素。 */
+#define KK_UI_ENUM_ROW_PITCH      17  /**< 相邻行顶边间距，比框高少 1 = 共用边。 */
+#define KK_UI_ENUM_ROWS_TOP       21  /**< 第一行顶边相对弹框顶边的偏移。 */
+#define KK_UI_ENUM_CONFIRM_GAP    4   /**< 列表底边到「确定」按钮的间隔。 */
+#define KK_UI_ENUM_CONFIRM_HEIGHT 18  /**< 按钮框高：16 行文字 + 上下各 1 像素边线。 */
+#define KK_UI_ENUM_BOX_LEFT       15
+#define KK_UI_ENUM_BOX_WIDTH      98
+
 typedef struct {
     KK_UI_PageId page;
     uint16_t selected;
@@ -129,6 +147,7 @@ typedef enum {
     KK_UI_OVERLAY_NONE = 0,
     KK_UI_OVERLAY_INT,
     KK_UI_OVERLAY_BOOL,
+    KK_UI_OVERLAY_ENUM,
     KK_UI_OVERLAY_CONFIRM,
     KK_UI_OVERLAY_MESSAGE
 } KK_UI_OverlayType;
@@ -189,6 +208,7 @@ typedef enum {
     KK_UI_DEFER_BACK,
     KK_UI_DEFER_INT,
     KK_UI_DEFER_BOOL,
+    KK_UI_DEFER_ENUM,
     KK_UI_DEFER_CONFIRM,
     KK_UI_DEFER_MESSAGE,
     KK_UI_DEFER_TOAST
@@ -280,6 +300,7 @@ void KK_UI_CustomTick(uint32_t now);
 
 KK_UI_Status KK_UI_DialogOpenInt(uint16_t index, uint32_t now);
 KK_UI_Status KK_UI_DialogOpenBool(uint16_t index, uint32_t now);
+KK_UI_Status KK_UI_DialogOpenEnum(uint16_t index, uint32_t now);
 KK_UI_Status KK_UI_DialogOpenConfirm(uint16_t index, uint32_t now);
 KK_UI_Status KK_UI_DialogOpenMessage(const char *text, KK_UI_EventId event,
                                      uint32_t now);

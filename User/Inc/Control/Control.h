@@ -13,6 +13,10 @@
 #define CONTROL_MODE_AUTO       0
 #define CONTROL_MODE_MANUAL     1
 
+/* 上电默认值：界面开关初值也从这里取 */
+#define CONTROL_ALGO_DEFAULT    CONTROL_ALGO_PID
+#define CONTROL_MODE_DEFAULT    CONTROL_MODE_AUTO
+
 /* 观测量：本周期快照，由 Control_Update 采集 */
 typedef struct
 {

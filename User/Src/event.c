@@ -23,6 +23,7 @@ void event_init(void)
 {
     HAL_TIM_Base_Start_IT(&htim5);
     HAL_TIM_Base_Start_IT(&htim6);
+    HAL_TIM_Base_Start_IT(&htim7);
 }
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
@@ -40,6 +41,10 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
         key_tick();
         car_state();
         buzzer_tick();
+
+    }
+    else if (htim == &htim7)
+    {
         Attitude_Update();
         Control_Update();
     }

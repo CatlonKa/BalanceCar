@@ -147,7 +147,8 @@ typedef enum {
     KK_UI_MENU_ACTION,
     KK_UI_MENU_INT,
     KK_UI_MENU_BOOL,
-    KK_UI_MENU_CONFIRM
+    KK_UI_MENU_CONFIRM,
+    KK_UI_MENU_ENUM
 } KK_UI_MenuItemType;
 
 typedef struct {
@@ -195,7 +196,22 @@ typedef struct {
     const char *title;
     bool *value;
     KK_UI_EventId changed_event;
+    const char *on_text;  /* NULL = 用 texts.on_text。 */
+    const char *off_text; /* NULL = 用 texts.off_text。 */
 } KK_UI_BoolBinding;
+
+/*
+ * 多选一绑定。value 是选项下标，弹框把 options 竖向列出来逐项选。
+ * 每项标签在行内居中；弹框高度随 option_count 自动伸缩。
+ * option_count 上限 KK_UI_ENUM_MAX_OPTIONS，超过按上限校验失败。
+ */
+typedef struct {
+    const char *title;
+    int32_t *value;
+    const char *const *options;
+    uint16_t option_count;
+    KK_UI_EventId changed_event;
+} KK_UI_EnumBinding;
 
 typedef struct {
     const char *text;
@@ -240,6 +256,8 @@ typedef struct {
     uint16_t int_binding_count;
     const KK_UI_BoolBinding *bool_bindings;
     uint16_t bool_binding_count;
+    const KK_UI_EnumBinding *enum_bindings;
+    uint16_t enum_binding_count;
     const KK_UI_ConfirmDesc *confirm_descs;
     uint16_t confirm_desc_count;
     KK_UI_Fonts fonts;
@@ -304,6 +322,7 @@ KK_UI_Status KK_UI_SetMenuItemState(KK_UI_PageId page,
 
 KK_UI_Status KK_UI_OpenIntEditor(uint16_t binding_index);
 KK_UI_Status KK_UI_OpenBoolEditor(uint16_t binding_index);
+KK_UI_Status KK_UI_OpenEnumEditor(uint16_t binding_index);
 KK_UI_Status KK_UI_OpenConfirm(uint16_t confirm_index);
 KK_UI_Status KK_UI_ShowMessage(const char *text, KK_UI_EventId acknowledged_event);
 KK_UI_Status KK_UI_ShowToast(const char *text, uint32_t duration_ms);

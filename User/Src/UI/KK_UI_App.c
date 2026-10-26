@@ -16,9 +16,9 @@
 #include "main.h"
 
 /* KK_UI 可运行样例。只描述页面/绑定/业务事件，刷新所有权归 KK_UI（不调 TFT_Clear/Update）。
- * 页面（8）：1 首页->五个图标入口 | 2 菜单->蜂鸣器/算法/方式/限速/亮度/重置
+ * 页面（6）：1 首页->五个图标入口 | 2 菜单->蜂鸣器/算法/方式/限速/亮度/重置
  *            3 状态->只读信息行 | 4 波形(CUSTOM) | 5 图片(CUSTOM，彩色直推)
- *            6 角度(CUSTOM，立方体) | 7 算法子菜单 | 8 方式子菜单
+ *            6 角度(CUSTOM，立方体)
  */
 
 /* --------------------------------------------------------------- 页面编号 ---- */
@@ -29,9 +29,7 @@ enum {
     KK_UI_APP_PAGE_STATUS,   /**< 只读信息页。 */
     KK_UI_APP_PAGE_WAVE,     /**< 波形全屏自定义页。 */
     KK_UI_APP_PAGE_IMAGE,    /**< 图片全屏自定义页（彩色直推）。 */
-    KK_UI_APP_PAGE_CUBE,     /**< 姿态立方体全屏自定义页。 */
-    KK_UI_APP_PAGE_ALGO,     /**< 控制算法子菜单。 */
-    KK_UI_APP_PAGE_MODE      /**< 控制方式子菜单。 */
+    KK_UI_APP_PAGE_CUBE      /**< 姿态立方体全屏自定义页。 */
 };
 
 /* --------------------------------------------------------------- 展示状态 ---- */
@@ -40,8 +38,8 @@ KK_UI_AppState kk_ui_app_state = {
     .buzzer_on = (BUZZER_DEFAULT_ENABLED != 0),
     .speed_limit = 60,
     .backlight_level = 60,   /* 默认 60% 亮度，比满亮度省电且不刺眼 */
-    .ctrl_algo = CONTROL_ALGO_PID,
-    .ctrl_mode = CONTROL_MODE_AUTO,
+    .algo_index = (int32_t)CONTROL_ALGO_DEFAULT,
+    .mode_manual = (CONTROL_MODE_DEFAULT != CONTROL_MODE_AUTO),
     /* 仅上电占位；屏幕亮起后由 kk_ui_app_update_voltage() 每 500 ms 覆写。 */
     .voltage_text = "12.6V",
     .angle_text = "0.0度",
@@ -56,9 +54,7 @@ static const KK_UI_PageRoute s_routes[] = {
     { KK_UI_PAGE_INFO, 0U },   /* 页面 3：信息表下标 0。 */
     { KK_UI_PAGE_CUSTOM, 0U }, /* 页面 4：自定义页下标 0（波形）。 */
     { KK_UI_PAGE_CUSTOM, 1U }, /* 页面 5：自定义页下标 1（图片）。 */
-    { KK_UI_PAGE_CUSTOM, 2U }, /* 页面 6：自定义页下标 2（姿态）。 */
-    { KK_UI_PAGE_MENU, 1U },   /* 页面 7：控制算法子菜单。 */
-    { KK_UI_PAGE_MENU, 2U }    /* 页面 8：控制方式子菜单。 */
+    { KK_UI_PAGE_CUSTOM, 2U }  /* 页面 6：自定义页下标 2（姿态）。 */
 };
 
 /* ------------------------------------------------------------------ 首页 ---- */
@@ -77,10 +73,11 @@ static const KK_UI_HomePage s_home_pages[] = {
 
 /* ------------------------------------------------------------------ 菜单 ---- */
 
+/* 六项都是内置类型，交互方式统一：点确定进弹框、改值、确认。 */
 static const KK_UI_MenuItem s_menu_items[] = {
     { "蜂鸣器", KK_UI_MENU_BOOL, 0U },
-    { "控制算法", KK_UI_MENU_PAGE, KK_UI_APP_PAGE_ALGO },
-    { "控制方式", KK_UI_MENU_PAGE, KK_UI_APP_PAGE_MODE },
+    { "控制算法", KK_UI_MENU_ENUM, 0U },
+    { "控制方式", KK_UI_MENU_BOOL, 1U },
     { "限速", KK_UI_MENU_INT, 0U },
     { "亮度", KK_UI_MENU_INT, 1U },
     { "重置", KK_UI_MENU_CONFIRM, 0U }
@@ -90,25 +87,8 @@ static const KK_UI_MenuItem s_menu_items[] = {
  * 用 KK_UI_SetMenuItemState() 改，改完调 KK_UI_Invalidate()。 */
 static uint8_t s_menu_item_states[(6U + 3U) / 4U];
 
-/* 子菜单：选中项用「禁用」标记，于是灰掉的那行就是当前生效的选项 */
-static const KK_UI_MenuItem s_algo_items[] = {
-    { "PID", KK_UI_MENU_ACTION, KK_UI_APP_EVENT_ALGO_PID },
-    { "LQR", KK_UI_MENU_ACTION, KK_UI_APP_EVENT_ALGO_LQR }
-};
-
-static uint8_t s_algo_item_states[(2U + 3U) / 4U];
-
-static const KK_UI_MenuItem s_mode_items[] = {
-    { "自动", KK_UI_MENU_ACTION, KK_UI_APP_EVENT_MODE_AUTO },
-    { "手动", KK_UI_MENU_ACTION, KK_UI_APP_EVENT_MODE_MANUAL }
-};
-
-static uint8_t s_mode_item_states[(2U + 3U) / 4U];
-
 static const KK_UI_MenuPage s_menu_pages[] = {
-    { "菜单", s_menu_items, s_menu_item_states, 6U },
-    { "控制算法", s_algo_items, s_algo_item_states, 2U },
-    { "控制方式", s_mode_items, s_mode_item_states, 2U }
+    { "菜单", s_menu_items, s_menu_item_states, 6U }
 };
 
 /* -------------------------------------------------------------- 信息页 ---- */
@@ -274,23 +254,6 @@ static void kk_ui_app_update_angle(uint32_t now_ms)
     KK_UI_Invalidate();
 }
 
-/* 把当前选项在子菜单里标成禁用：灰掉的那行就是正在生效的 */
-static void kk_ui_app_sync_choice_states(void)
-{
-    uint16_t i;
-
-    for (i = 0U; i < 2U; ++i) {
-        (void)KK_UI_SetMenuItemState(
-            KK_UI_APP_PAGE_ALGO, i,
-            (i == (uint16_t)kk_ui_app_state.ctrl_algo) ?
-            KK_UI_ITEM_DISABLED : KK_UI_ITEM_NORMAL);
-        (void)KK_UI_SetMenuItemState(
-            KK_UI_APP_PAGE_MODE, i,
-            (i == (uint16_t)kk_ui_app_state.ctrl_mode) ?
-            KK_UI_ITEM_DISABLED : KK_UI_ITEM_NORMAL);
-    }
-}
-
 /* -------------------------------------------------------------- 变量绑定 ---- */
 
 /*
@@ -307,7 +270,20 @@ static const KK_UI_IntBinding s_int_bindings[] = {
 };
 
 static const KK_UI_BoolBinding s_bool_bindings[] = {
-    { "蜂鸣器", &kk_ui_app_state.buzzer_on, KK_UI_APP_EVENT_BUZZER_CHANGED }
+    { "蜂鸣器", &kk_ui_app_state.buzzer_on, KK_UI_APP_EVENT_BUZZER_CHANGED,
+      NULL, NULL },
+    /* 二选一：开关图形不变，只把两侧文字换成「手动 / 自动」 */
+    { "控制方式", &kk_ui_app_state.mode_manual, KK_UI_APP_EVENT_MODE_CHANGED,
+      "手动", "自动" }
+};
+
+/* 多选一的选项表，顺序必须与 CONTROL_ALGO_* 一致 */
+static const char *const s_algo_options[] = { "PID", "LQR" };
+
+static const KK_UI_EnumBinding s_enum_bindings[] = {
+    { "控制算法", &kk_ui_app_state.algo_index, s_algo_options,
+      sizeof(s_algo_options) / sizeof(s_algo_options[0]),
+      KK_UI_APP_EVENT_ALGO_CHANGED }
 };
 
 static const KK_UI_ConfirmDesc s_confirm_descs[] = {
@@ -344,6 +320,8 @@ static const KK_UI_App s_app = {
     .int_binding_count = sizeof(s_int_bindings) / sizeof(s_int_bindings[0]),
     .bool_bindings = s_bool_bindings,
     .bool_binding_count = sizeof(s_bool_bindings) / sizeof(s_bool_bindings[0]),
+    .enum_bindings = s_enum_bindings,
+    .enum_binding_count = sizeof(s_enum_bindings) / sizeof(s_enum_bindings[0]),
     .confirm_descs = s_confirm_descs,
     .confirm_desc_count = sizeof(s_confirm_descs) / sizeof(s_confirm_descs[0]),
     .fonts = s_fonts,
@@ -752,8 +730,9 @@ KK_UI_Status KK_UI_AppInit(void)
 
     /* 蜂鸣器硬件标志与界面状态对齐：默认关由 BUZZER_DEFAULT_ENABLED 决定 */
     buzzer_set_enabled(kk_ui_app_state.buzzer_on);
-    /* 子菜单的「当前选项」标记：首次进入前就得是对的 */
-    kk_ui_app_sync_choice_states();
+    /* 控制器初始算法/方式同样跟界面状态对齐，否则首次改动前两边不一致 */
+    Control_SetAlgo((uint8_t)kk_ui_app_state.algo_index);
+    Control_SetMode(kk_ui_app_state.mode_manual ? CONTROL_MODE_MANUAL : CONTROL_MODE_AUTO);
 
     /* 立刻按当前阶段设一次背光，否则 TFT_DriverInit() 的满亮度会持续到首次 AppUpdate。 */
     s_ui_state = KK_UI_InputWheelUsable() ? 1U : 2U;
@@ -806,21 +785,12 @@ void KK_UI_AppUpdate(void)
             /* 业务模块在这里同步蜂鸣器硬件，真正停转前不要动电机。 */
             buzzer_set_enabled(kk_ui_app_state.buzzer_on);
             break;
-        case KK_UI_APP_EVENT_ALGO_PID:
-        case KK_UI_APP_EVENT_ALGO_LQR:
-            kk_ui_app_state.ctrl_algo = (event == KK_UI_APP_EVENT_ALGO_PID) ?
-                                        CONTROL_ALGO_PID : CONTROL_ALGO_LQR;
-            Control_SetAlgo((uint8_t)kk_ui_app_state.ctrl_algo);
-            kk_ui_app_sync_choice_states();
-            KK_UI_Invalidate();
+        case KK_UI_APP_EVENT_ALGO_CHANGED:
+            Control_SetAlgo((uint8_t)kk_ui_app_state.algo_index);
             break;
-        case KK_UI_APP_EVENT_MODE_AUTO:
-        case KK_UI_APP_EVENT_MODE_MANUAL:
-            kk_ui_app_state.ctrl_mode = (event == KK_UI_APP_EVENT_MODE_AUTO) ?
-                                        CONTROL_MODE_AUTO : CONTROL_MODE_MANUAL;
-            Control_SetMode((uint8_t)kk_ui_app_state.ctrl_mode);
-            kk_ui_app_sync_choice_states();
-            KK_UI_Invalidate();
+        case KK_UI_APP_EVENT_MODE_CHANGED:
+            Control_SetMode(kk_ui_app_state.mode_manual ? CONTROL_MODE_MANUAL :
+                                                         CONTROL_MODE_AUTO);
             break;
         case KK_UI_APP_EVENT_LIMIT_CHANGED:
             /* 业务模块在这里同步限速，并按需要持久化。 */

@@ -12,8 +12,8 @@ static const Control_Algo *const s_algos[CONTROL_ALGO_COUNT] =
     &Control_AlgoLQR
 };
 
-static uint8_t s_algo = CONTROL_ALGO_PID;
-static uint8_t s_mode = CONTROL_MODE_AUTO;
+static uint8_t s_algo = CONTROL_ALGO_DEFAULT;
+static uint8_t s_mode = CONTROL_MODE_DEFAULT;
 
 static int16_t control_limit(float v)
 {

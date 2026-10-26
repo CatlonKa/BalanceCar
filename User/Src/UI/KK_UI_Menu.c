@@ -267,6 +267,9 @@ static void kk_ui_menu_activate(uint32_t now)
     case KK_UI_MENU_BOOL:
         status = KK_UI_DialogOpenBool(item->ref, now);
         break;
+    case KK_UI_MENU_ENUM:
+        status = KK_UI_DialogOpenEnum(item->ref, now);
+        break;
     case KK_UI_MENU_CONFIRM:
         status = KK_UI_DialogOpenConfirm(item->ref, now);
         break;
@@ -316,11 +319,31 @@ static void kk_ui_menu_value(const KK_UI_MenuItem *item, char *buffer,
         const char *text = *binding->value ? kk_ui.app->texts.on_text :
                                              kk_ui.app->texts.off_text;
         size_t i = 0U;
+        if (*binding->value) {
+            if (binding->on_text != NULL) {
+                text = binding->on_text;
+            }
+        } else if (binding->off_text != NULL) {
+            text = binding->off_text;
+        }
         while (i + 1U < capacity && text[i] != '\0') {
             buffer[i] = text[i];
             ++i;
         }
         buffer[i] = '\0';
+    } else if (item->type == KK_UI_MENU_ENUM) {
+        const KK_UI_EnumBinding *binding = &kk_ui.app->enum_bindings[item->ref];
+        int32_t index = *binding->value;
+        if (index >= 0 && index < (int32_t)binding->option_count &&
+            binding->options[index] != NULL) {
+            const char *text = binding->options[index];
+            size_t i = 0U;
+            while (i + 1U < capacity && text[i] != '\0') {
+                buffer[i] = text[i];
+                ++i;
+            }
+            buffer[i] = '\0';
+        }
     }
 }
 

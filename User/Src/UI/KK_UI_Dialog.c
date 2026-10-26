@@ -4,6 +4,7 @@
 
 #define KK_UI_MODAL_ENABLED (KK_UI_ENABLE_INT_EDITOR || \
                              KK_UI_ENABLE_BOOL_EDITOR || \
+                             KK_UI_ENABLE_ENUM_EDITOR || \
                              KK_UI_ENABLE_CONFIRM || \
                              KK_UI_ENABLE_MESSAGE)
 
@@ -83,19 +84,89 @@ static int16_t kk_ui_dialog_origin(void)
 #endif
 
 #if KK_UI_MODAL_ENABLED
+static const KK_UI_EnumBinding *kk_ui_enum_binding(void)
+{
+    return &kk_ui.app->enum_bindings[kk_ui.overlay.ref];
+}
+
+/* 选项数超过上限时按上限画，避免弹框顶出屏幕之外。 */
+static uint16_t kk_ui_enum_count(void)
+{
+    uint16_t count = kk_ui_enum_binding()->option_count;
+
+    return count > (uint16_t)KK_UI_ENUM_MAX_OPTIONS ?
+           (uint16_t)KK_UI_ENUM_MAX_OPTIONS : count;
+}
+
+/* 列表底边（最后一行框的下边线）相对弹框顶边的偏移 */
+static int16_t kk_ui_enum_rows_bottom(void)
+{
+    return (int16_t)(KK_UI_ENUM_ROWS_TOP +
+                     (kk_ui_enum_count() - 1U) * KK_UI_ENUM_ROW_PITCH +
+                     KK_UI_ENUM_ROW_HEIGHT);
+}
+
+/* 标题 + 列表 + 间隔 + 「确定」按钮 + 下留白 */
+static int16_t kk_ui_enum_height(void)
+{
+    return (int16_t)(kk_ui_enum_rows_bottom() + KK_UI_ENUM_CONFIRM_GAP +
+                     KK_UI_ENUM_CONFIRM_HEIGHT + 3);
+}
+
+/* 太高就整体上移，底边固定不越出画布 */
+static int16_t kk_ui_enum_top(void)
+{
+    int16_t height = kk_ui_enum_height();
+    int16_t top = KK_UI_DIALOG_TOP;
+
+    if (top + height > KK_UI_SCREEN_HEIGHT - 3) {
+        top = (int16_t)(KK_UI_SCREEN_HEIGHT - 3 - height);
+    }
+    return top < 2 ? 2 : top;
+}
+
+static int16_t kk_ui_enum_confirm_top(void)
+{
+    return (int16_t)(kk_ui_enum_top() + kk_ui_enum_rows_bottom() +
+                     KK_UI_ENUM_CONFIRM_GAP);
+}
+
+static int16_t kk_ui_enum_row_top(uint16_t index)
+{
+    return (int16_t)(kk_ui_enum_top() + KK_UI_ENUM_ROWS_TOP +
+                     index * KK_UI_ENUM_ROW_PITCH);
+}
+
 static void kk_ui_dialog_focus_rect(uint8_t focus, int16_t *x, int16_t *y,
                                     int16_t *width, int16_t *height)
 {
     if (kk_ui.overlay.type == KK_UI_OVERLAY_MESSAGE) {
-        *x = 46; *y = 89; *width = 36; *height = 16;
+        *x = 46; *y = 88; *width = 36; *height = 20;
+    } else if (kk_ui.overlay.type == KK_UI_OVERLAY_ENUM) {
+        /* 列表的焦点用「反白选项」表达，焦点框只服务底部的「确定」。 */
+        *x = KK_UI_ENUM_BOX_LEFT; *y = kk_ui_enum_confirm_top();
+        *width = KK_UI_ENUM_BOX_WIDTH;
+        *height = (int16_t)KK_UI_ENUM_CONFIRM_HEIGHT;
     } else if (focus == KK_UI_FOCUS_VALUE) {
-        *x = kk_ui.overlay.type == KK_UI_OVERLAY_BOOL ? 29 : 39;
-        *y = 69;
-        *width = kk_ui.overlay.type == KK_UI_OVERLAY_BOOL ? 70 : 46;
-        *height = 16;
+        /*
+         * 字模在 POS_TOP/REF_ALL 下实际占 16 行（y+1..y+16），所以框高给 20：
+         * 上下各留 2 像素，16 像素的旧框会把最后一行的下缘切掉。
+         */
+        *y = 68;
+        *height = 20;
+        if (kk_ui.overlay.type == KK_UI_OVERLAY_BOOL) {
+            /* 开关行两侧文字 + 开关图形横跨 15..113，取整行宽度才包得住字。 */
+            *x = 15;
+            *width = 99;
+        } else {
+            /* 整数编辑器只框住数值本身，箭头留在框外。 */
+            *x = 39;
+            *width = 46;
+        }
     } else {
-        /* 取消已改成左轮后退手势，弹框底部只剩一个整宽的「确定」。 */
-        *x = 15; *y = 89; *width = 98; *height = 16;
+        /* 取消已改成左轮后退手势，弹框底部只剩一个整宽的「确定」。
+           高度同样给 20，避免末行文字落在反白区外。 */
+        *x = 15; *y = 88; *width = 98; *height = 20;
     }
 }
 
@@ -234,6 +305,30 @@ KK_UI_Status KK_UI_DialogOpenBool(uint16_t index, uint32_t now)
 #endif
 }
 
+KK_UI_Status KK_UI_DialogOpenEnum(uint16_t index, uint32_t now)
+{
+#if KK_UI_ENABLE_ENUM_EDITOR
+    KK_UI_Status status;
+    const KK_UI_EnumBinding *binding;
+
+    if (index >= kk_ui.app->enum_binding_count) {
+        return KK_UI_INVALID_ARGUMENT;
+    }
+    binding = &kk_ui.app->enum_bindings[index];
+    status = kk_ui_dialog_begin(KK_UI_OVERLAY_ENUM, index, NULL,
+                                KK_UI_EVENT_NONE, now);
+    if (status == KK_UI_OK) {
+        kk_ui.overlay.draft = *binding->value;
+        kk_ui.overlay.original = kk_ui.overlay.draft;
+        kk_ui.overlay.previous = kk_ui.overlay.draft;
+    }
+    return status;
+#else
+    (void)index; (void)now;
+    return KK_UI_UNSUPPORTED;
+#endif
+}
+
 KK_UI_Status KK_UI_DialogOpenConfirm(uint16_t index, uint32_t now)
 {
 #if KK_UI_ENABLE_CONFIRM
@@ -341,6 +436,19 @@ static void kk_ui_dialog_change_value(KK_UI_InputEvent event, uint32_t now)
         }
         next = kk_ui.overlay.draft == 0 ? 1 : 0;
         increase = next != 0;
+    } else if (kk_ui.overlay.type == KK_UI_OVERLAY_ENUM) {
+        /* 多选一：向上 = 上一项，向下 = 下一项（与菜单列表同向）。到头就停，
+           不循环，避免误转一圈又回到原值。 */
+        int32_t last = (int32_t)kk_ui_enum_count() - 1;
+        next += (event.action == KK_UI_INPUT_UP) ? -(int32_t)event.steps :
+                                                   (int32_t)event.steps;
+        if (next < 0) {
+            next = 0;
+        }
+        if (next > last) {
+            next = last;
+        }
+        increase = next > kk_ui.overlay.draft;
     }
     if (next != kk_ui.overlay.draft) {
         kk_ui.overlay.previous = kk_ui.overlay.draft;
@@ -375,6 +483,15 @@ static void kk_ui_dialog_commit(uint32_t now)
                 return;
             }
             *binding->value = kk_ui.overlay.draft != 0;
+        }
+    } else if (kk_ui.overlay.type == KK_UI_OVERLAY_ENUM) {
+        const KK_UI_EnumBinding *binding = kk_ui_enum_binding();
+        if (kk_ui.overlay.draft != kk_ui.overlay.original) {
+            event = binding->changed_event;
+            if (!kk_ui_dialog_event_or_reject(event)) {
+                return;
+            }
+            *binding->value = kk_ui.overlay.draft;
         }
     }
     kk_ui_dialog_close(now);
@@ -562,6 +679,9 @@ static const char *kk_ui_dialog_title(void)
     if (kk_ui.overlay.type == KK_UI_OVERLAY_BOOL) {
         return kk_ui.app->bool_bindings[kk_ui.overlay.ref].title;
     }
+    if (kk_ui.overlay.type == KK_UI_OVERLAY_ENUM) {
+        return kk_ui_enum_binding()->title;
+    }
     return kk_ui.app->texts.message_title;
 }
 
@@ -602,7 +722,7 @@ static void kk_ui_draw_int_value(void)
                     old_text, sizeof(old_text));
     KK_UI_FormatInt(kk_ui.overlay.draft, binding->unit,
                     new_text, sizeof(new_text));
-    TFT_SetClipWindow(39, 69, 46U, 16U);
+    TFT_SetClipWindow(39, 68, 46U, 20U);
     if (kk_ui.overlay.value_moving != 0U) {
         int16_t offset = (int16_t)(16 * kk_ui.overlay.value_q12 /
                                    KK_UI_Q12_ONE);
@@ -620,12 +740,115 @@ static void kk_ui_draw_int_value(void)
 
 static void kk_ui_draw_bool_value(void)
 {
+    const KK_UI_BoolBinding *binding =
+        &kk_ui.app->bool_bindings[kk_ui.overlay.ref];
+    const char *on_text = binding->on_text != NULL ? binding->on_text :
+                                                     kk_ui.app->texts.on_text;
+    const char *off_text = binding->off_text != NULL ? binding->off_text :
+                                                       kk_ui.app->texts.off_text;
     bool on = kk_ui.overlay.draft != 0;
     uint16_t p = kk_ui.overlay.value_moving != 0U ?
                  kk_ui.overlay.value_q12 : KK_UI_Q12_ONE;
-    KK_UI_DrawCentered(31, 69, 14U, kk_ui.app->texts.off_text);
-    KK_UI_DrawCentered(83, 69, 14U, kk_ui.app->texts.on_text);
+
+    /*
+     * 全局的开/关只占一个字宽，沿用原来的紧贴开关的位置；
+     * 绑定自带文字（如「自动/手动」）时改用两侧整块留白居中，
+     * 否则两个汉字会碰到开关图形。
+     */
+    if (binding->on_text != NULL || binding->off_text != NULL) {
+        KK_UI_DrawCentered(15, 69, 32U, off_text);
+        KK_UI_DrawCentered(82, 69, 32U, on_text);
+    } else {
+        KK_UI_DrawCentered(31, 69, 14U, off_text);
+        KK_UI_DrawCentered(83, 69, 14U, on_text);
+    }
     KK_UI_DrawSwitch(48, 70, 33U, 14U, on, p);
+}
+
+/* 单个选项框：方角矩形，与相邻行共用一条边；反白=待选项，四角短线=当前生效项 */
+static void kk_ui_draw_enum_row(int16_t y, const char *label, bool inverted,
+                                bool marked)
+{
+    const int16_t x = KK_UI_ENUM_BOX_LEFT;
+    const uint16_t width = KK_UI_ENUM_BOX_WIDTH;
+    const int16_t x1 = (int16_t)(x + (int16_t)width - 1);
+    const int16_t y1 = (int16_t)(y + KK_UI_ENUM_ROW_HEIGHT - 1);
+
+    /* 先画外框：反白行只在框内铺白，共用的那条边不会被抹掉 */
+    TFT_DrawFrame(x, y, width, (uint16_t)KK_UI_ENUM_ROW_HEIGHT);
+
+    if (inverted) {
+        /* 反白：实心白块 + CLEAR 写字，与首页选中项同一套做法 */
+        TFT_SetDrawMode(TFT_DRAW_SET);
+        TFT_DrawBox((int16_t)(x + 1), (int16_t)(y + 1),
+                    (uint16_t)(width - 2U),
+                    (uint16_t)(KK_UI_ENUM_ROW_HEIGHT - 2));
+        TFT_SetDrawMode(TFT_DRAW_CLEAR);
+    } else {
+        TFT_SetDrawMode(TFT_DRAW_SET);
+    }
+
+    if (marked) {
+        /* 四个角各两段短线组成直角，内缩 3 像素落在框内侧 */
+        const int16_t in = 3;
+        const uint16_t len = 4U;
+
+        TFT_DrawHLine((int16_t)(x + in), (int16_t)(y + in), len);
+        TFT_DrawVLine((int16_t)(x + in), (int16_t)(y + in), len);
+        TFT_DrawHLine((int16_t)(x1 - in - (int16_t)len + 1),
+                      (int16_t)(y + in), len);
+        TFT_DrawVLine((int16_t)(x1 - in), (int16_t)(y + in), len);
+        TFT_DrawHLine((int16_t)(x + in), (int16_t)(y1 - in), len);
+        TFT_DrawVLine((int16_t)(x + in),
+                      (int16_t)(y1 - in - (int16_t)len + 1), len);
+        TFT_DrawHLine((int16_t)(x1 - in - (int16_t)len + 1),
+                      (int16_t)(y1 - in), len);
+        TFT_DrawVLine((int16_t)(x1 - in),
+                      (int16_t)(y1 - in - (int16_t)len + 1), len);
+    }
+
+    /* 文字画在框内第一行之后，正好占满 16 行，上下各留 1 像素边线 */
+    KK_UI_DrawCentered(x, y, width, label);
+    TFT_SetDrawMode(TFT_DRAW_SET);
+}
+
+static void kk_ui_draw_enum_value(void)
+{
+    const KK_UI_EnumBinding *binding = kk_ui_enum_binding();
+    const uint16_t count = kk_ui_enum_count();
+    const int16_t top = kk_ui_enum_top();
+    uint16_t i;
+
+    KK_UI_DrawCentered(10, (int16_t)(top + 2), 108U, binding->title);
+    TFT_DrawHLine(12, (int16_t)(top + 19), 104U);
+
+    for (i = 0U; i < count; ++i) {
+        if (binding->options[i] == NULL) {
+            continue;
+        }
+        kk_ui_draw_enum_row(kk_ui_enum_row_top(i), binding->options[i],
+                            i == (uint16_t)kk_ui.overlay.draft,
+                            i == (uint16_t)kk_ui.overlay.original);
+    }
+
+    /* 确定按钮：圆角框（与列表的方角区分）；焦点在它上面时反白 */
+    if (kk_ui.overlay.focus == KK_UI_FOCUS_CONFIRM) {
+        TFT_DrawRBox(KK_UI_ENUM_BOX_LEFT, kk_ui_enum_confirm_top(),
+                     (uint16_t)KK_UI_ENUM_BOX_WIDTH,
+                     (uint16_t)KK_UI_ENUM_CONFIRM_HEIGHT, 3U);
+        TFT_SetDrawMode(TFT_DRAW_CLEAR);
+        KK_UI_DrawCentered(KK_UI_ENUM_BOX_LEFT, kk_ui_enum_confirm_top(),
+                           (uint16_t)KK_UI_ENUM_BOX_WIDTH,
+                           kk_ui.app->texts.confirm_text);
+        TFT_SetDrawMode(TFT_DRAW_SET);
+    } else {
+        TFT_DrawRFrame(KK_UI_ENUM_BOX_LEFT, kk_ui_enum_confirm_top(),
+                       (uint16_t)KK_UI_ENUM_BOX_WIDTH,
+                       (uint16_t)KK_UI_ENUM_CONFIRM_HEIGHT, 3U);
+        KK_UI_DrawCentered(KK_UI_ENUM_BOX_LEFT, kk_ui_enum_confirm_top(),
+                           (uint16_t)KK_UI_ENUM_BOX_WIDTH,
+                           kk_ui.app->texts.confirm_text);
+    }
 }
 
 void KK_UI_DialogDraw(void)
@@ -639,17 +862,21 @@ void KK_UI_DialogDraw(void)
     int32_t focus_w;
     int32_t focus_h;
     uint16_t p;
+    bool is_enum;
 
     if (!KK_UI_DialogActive()) {
         return;
     }
+    is_enum = kk_ui.overlay.type == KK_UI_OVERLAY_ENUM;
     p = kk_ui.overlay.phase_q12;
     x = (int16_t)(3 + 3 * p / KK_UI_Q12_ONE);
+    /* 多选一的高度随选项数变，展开终点随之变化。 */
     y = (int16_t)(kk_ui.overlay.origin_y +
-                  ((int32_t)KK_UI_DIALOG_TOP - kk_ui.overlay.origin_y) * p /
-                  KK_UI_Q12_ONE);
+                  ((int32_t)(is_enum ? kk_ui_enum_top() : KK_UI_DIALOG_TOP) -
+                   kk_ui.overlay.origin_y) * p / KK_UI_Q12_ONE);
     width = (int16_t)(118 - 2 * p / KK_UI_Q12_ONE);
-    height = (int16_t)(16 + 45 * p / KK_UI_Q12_ONE);
+    height = (int16_t)(16 + ((is_enum ? (int32_t)kk_ui_enum_height() : 61) - 16) *
+                       p / KK_UI_Q12_ONE);
     TFT_ResetClipWindow();
     TFT_SetDrawMode(TFT_DRAW_CLEAR);
     TFT_DrawRBox(x, y, (uint16_t)width, (uint16_t)height, 3U);
@@ -661,7 +888,9 @@ void KK_UI_DialogDraw(void)
     TFT_SetClipWindow((int16_t)(x + 1), (int16_t)(y + 1),
                        (uint16_t)(width - 2), (uint16_t)(height - 2));
     TFT_SetFont(kk_ui.app->fonts.body_font);
-    if (kk_ui.overlay.type == KK_UI_OVERLAY_CONFIRM) {
+    if (is_enum) {
+        kk_ui_draw_enum_value();
+    } else if (kk_ui.overlay.type == KK_UI_OVERLAY_CONFIRM) {
         kk_ui_draw_dialog_text(kk_ui.overlay.text);
         KK_UI_DrawCentered(15, 89, 98U, kk_ui.app->texts.confirm_text);
     } else {
@@ -693,13 +922,19 @@ void KK_UI_DialogDraw(void)
             KK_UI_DrawCentered(46, 89, 36U, kk_ui.app->texts.confirm_text);
         }
     }
-    kk_ui_dialog_current_focus(kk_ui.last_update, &focus_x, &focus_y,
-                               &focus_w, &focus_h);
-    TFT_SetDrawMode(TFT_DRAW_XOR);
-    TFT_DrawRBox(KK_UI_RoundQ8(focus_x), KK_UI_RoundQ8(focus_y),
-                  (uint16_t)KK_UI_RoundQ8(focus_w),
-                  (uint16_t)KK_UI_RoundQ8(focus_h), 3U);
-    TFT_SetDrawMode(TFT_DRAW_SET);
+    /*
+     * 多选一的焦点已经用「反白选项 / 反白确定按钮」表达，
+     * 再叠一层 XOR 框会把反白抵消掉，所以只对它跳过。
+     */
+    if (!is_enum) {
+        kk_ui_dialog_current_focus(kk_ui.last_update, &focus_x, &focus_y,
+                                   &focus_w, &focus_h);
+        TFT_SetDrawMode(TFT_DRAW_XOR);
+        TFT_DrawRBox(KK_UI_RoundQ8(focus_x), KK_UI_RoundQ8(focus_y),
+                      (uint16_t)KK_UI_RoundQ8(focus_w),
+                      (uint16_t)KK_UI_RoundQ8(focus_h), 3U);
+        TFT_SetDrawMode(TFT_DRAW_SET);
+    }
     TFT_ResetClipWindow();
 }
 

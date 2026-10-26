@@ -1,0 +1,87 @@
+{
+    // 用 "process" 类型直接起进程，不经过 shell：
+    //   - 参数里的反斜杠不会被 shell 或 OpenOCD 的 Tcl 解析器吃掉
+    //   - 退出码直接反映成败，适合被 launch.json 的 preLaunchTask 依赖
+    //
+    // 操作方式（只用 VS Code 内置键，没有自定义全局快捷键）
+    //   Ctrl+Shift+B   构建 + 烧录 + 校验 + 复位（= 本文件里的默认构建任务）
+    //   Ctrl+Shift+P   输入 "Run Task" → 列出全部 5 条，包括「烧录（不构建）」
+    //   → 想「只烧录不构建」就走任务选择器，比一键烧录多一步
+    "version": "2.0.0",
+    "tasks": [
+        {
+            // 纯构建。不是默认构建任务：Ctrl+Shift+B 留给「一键烧录」
+            "label": "Build",
+            "detail": "cube-cmake --build build/Debug",
+            "type": "process",
+            "command": "cube-cmake",
+            "args": ["--build", "build/Debug"],
+            "options": { "cwd": "${workspaceFolder}" },
+            "group": "build",
+            "problemMatcher": []
+        },
+        {
+            // ⭐ Ctrl+Shift+B 一键：先构建，再写入并回读校验
+            // verify 是关键 —— 它能证明「烧进去的是这次的固件」
+            "label": "OpenOCD: 烧录（构建+校验+复位）",
+            "type": "process",
+            "command": "D:/OpenOCD/bin/openocd.exe",
+            "args": [
+                "-s", "D:/OpenOCD/share/openocd/scripts",
+                "-f", "interface/stlink.cfg",
+                "-f", "target/stm32f4x.cfg",
+                "-c", "program build/Debug/Balance.elf verify reset exit"
+            ],
+            "options": { "cwd": "${workspaceFolder}" },
+            "dependsOn": "Build",
+            // ⚠️ 必须写这句：dependsOn 默认并行，会让构建和烧录同时启动 → 烧到旧/半写的 elf
+            "dependsOrder": "sequence",
+            "group": { "kind": "build", "isDefault": true },
+            "problemMatcher": []
+        },
+        {
+            // 已经构建过、只想重烧时用（省掉构建那几秒）
+            "label": "OpenOCD: 烧录（不构建）",
+            "type": "process",
+            "command": "D:/OpenOCD/bin/openocd.exe",
+            "args": [
+                "-s", "D:/OpenOCD/share/openocd/scripts",
+                "-f", "interface/stlink.cfg",
+                "-f", "target/stm32f4x.cfg",
+                "-c", "program build/Debug/Balance.elf verify reset exit"
+            ],
+            "options": { "cwd": "${workspaceFolder}" },
+            "group": "build",
+            "problemMatcher": []
+        },
+        {
+            // 整片擦除。慎用：会连配置区一起清掉
+            // 驱动名是 stm32f2x（不是 stm32f4x），见 target/stm32f4x.cfg
+            "label": "OpenOCD: 全片擦除",
+            "type": "process",
+            "command": "D:/OpenOCD/bin/openocd.exe",
+            "args": [
+                "-s", "D:/OpenOCD/share/openocd/scripts",
+                "-f", "interface/stlink.cfg",
+                "-f", "target/stm32f4x.cfg",
+                "-c", "init; reset halt; stm32f2x mass_erase 0; reset; shutdown"
+            ],
+            "options": { "cwd": "${workspaceFolder}" },
+            "problemMatcher": []
+        },
+        {
+            // 只复位不烧录，验证探针与目标是否正常
+            "label": "OpenOCD: 探针自检",
+            "type": "process",
+            "command": "D:/OpenOCD/bin/openocd.exe",
+            "args": [
+                "-s", "D:/OpenOCD/share/openocd/scripts",
+                "-f", "interface/stlink.cfg",
+                "-f", "target/stm32f4x.cfg",
+                "-c", "init; reset halt; reg; shutdown"
+            ],
+            "options": { "cwd": "${workspaceFolder}" },
+            "problemMatcher": []
+        }
+    ]
+}
