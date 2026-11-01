@@ -11,8 +11,14 @@ mx.scratch
 # compile_commands.json / CMakeCache.txt），已由上面的 "build" 覆盖。
 compile_commands.json
 
+# ---- 本机 IDE 配置 ----
+# .vscode（launch/tasks/settings/c_cpp_properties + 烧录脚本）与 .settings 都写死了
+# 本机路径（D:/OpenOCD、D:/stm32_tools/jlink）和当前探针选择，换机器要重配，不入库。
+# 上面的 "!.settings" 是 CubeMX 生成的，靠下面这行覆盖。
+.vscode/
+.settings/
+
 # ---- IDE / 工具临时文件 ----
-# .settings 按 CubeMX 的设定入库，这里只挡掉其它本地状态。
 .cache/
 .vscode/*.log
 *.bak
@@ -67,3 +73,10 @@ TODO.md
 # 与固件功能无关，不随源码上传。hooks 的 command 还含本机绝对路径。
 .github/copilot-instructions.md
 .github/hooks/
+# 审查规则，内含 D:\Chip_lab 本机路径，与上面同类。
+CODING_STANDARDS.md
+
+# ---- 主机侧调试脚本 ----
+# tools/ 走本机 JLink 路径 + pylink，只在开发机跑；--csv 输出常落在根目录。
+tools/
+/*.csv

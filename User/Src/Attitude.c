@@ -13,11 +13,11 @@
 /* 阻塞标定重试上限，防 IMU 没通时死等（5000 × 1ms = 5s） */
 #define ATTITUDE_CALIB_RETRY_MAX     5000U
 
-/* 直立窗口：|pitch| 上限（rad）与重力落在 Y-Z 平面的最小占比。
+/* 防倒窗口：|pitch| 上限（rad）与重力落在 Y-Z 平面的最小占比。
    侧躺时 acc[1]、acc[2] 都趋 0，单轴 pitch 会误报「直立」，
-   必须靠 Y-Z 占比识别：直立≈1.0，侧躺 90°≈0，侧倾 30°≈0.87。 */
-#define ATTITUDE_UPRIGHT_MAX_RAD     0.52f    /* 30° */
-#define ATTITUDE_UPRIGHT_MIN_YZ      0.85f    /* 约 32° 以内侧倾 */
+   必须靠 Y-Z 占比识别：直立≈1.0，侧躺 90°≈0，侧倾 60°≈0.5。 */
+#define ATTITUDE_UPRIGHT_MAX_RAD     1.047f   /* 60° */
+#define ATTITUDE_UPRIGHT_MIN_YZ      0.5f     /* 约 60° 以内侧倾 */
 #define ATTITUDE_PI                  3.14159265f
 
 static float s_pitch;             // rad，融合后的俯仰角，前倾为正

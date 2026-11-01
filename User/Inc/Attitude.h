@@ -54,12 +54,12 @@ void Attitude_Calibrate(void);
 bool Attitude_IsCalibrating(void);
 
 /*
- * 车是否真的立着，可以进直立环。
+ * 车是否还没倒：只用于识别「已倒下」，正常摆动不切断控制。
  *
  * 除了 |pitch| 在窗口内，还要求重力确实落在 pitch 平面里：
  * 侧躺 90° 时 acc[NUM]、acc[DEN] 都趋 0，单轴 pitch 会误报 0（「完美直立」），
  * 只靠 GetPitch() 分不出「直立」和「侧躺」，必须用本函数。
- * 判据：|pitch| ≤ 30° 且 重力平面内占比 ≥ 0.85（约 32° 以内侧倾）。
+ * 判据：|pitch| ≤ 60° 且 重力平面内占比 ≥ 0.5（约 60° 以内侧倾）。
  */
 bool Attitude_IsUpright(void);
 

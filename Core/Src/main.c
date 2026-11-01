@@ -42,6 +42,7 @@
 #include "Analog.h"
 #include "Buzzer.h"
 #include "Control.h"
+#include "Rtt.h"
 
 
 /* USER CODE END Includes */
@@ -138,13 +139,14 @@ int main(void)
   encoder_init();
   motor_init();
   buzzer_init();
-  buzzer_startup_tone();  /* 上电自检音 */
   DI_ALL_LED(0, 10, 10);
 
   imu_init();
   Attitude_Init();  /* 零偏标定，必须在 imu_init() 之后 */
+  buzzer_startup_tone();  /* 上电自检音：放标定之后，避免振动干扰零偏 */
   UIAttitude_Init();/* 界面姿态：只启用 DWT 周期计数，标定在进入姿态页时做 */
   Control_Init();  /* PID/LQR 控制器：只清零，参数在进入控制页时加载 */
+  Rtt_Init();      /* SEGGER RTT 遥测：ch0 文本、ch1 float 波形 */
 
   /* USER CODE END 2 */
 
@@ -160,6 +162,9 @@ int main(void)
 
     //IMU：中断只置标志，读在这里
     imu_service();
+
+    //RTT 遥测：内部限频，没到点立即返回
+    Rtt_Telemetry();
 
 
 

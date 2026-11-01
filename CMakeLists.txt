@@ -58,6 +58,10 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     User/Src/UIAttitude.c
     # User/Src/ImuTest.c   /* 临时测试模块，需要时取消注释 */
 
+    # SEGGER RTT（J-Link 免引脚遥测）+ 本工程封装
+    User/Src/RTT/SEGGER_RTT.c
+    User/Src/Rtt.c
+
     # Control（平衡控制：调度 + PID 串级 + LQR）
     User/Src/Control/Control.c
     User/Src/Control/Control_PID.c
@@ -99,6 +103,7 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     User/Inc/TFT
     User/Inc/UI
     User/Inc/Control
+    User/Inc/RTT
 )
 
 # Add project symbols (macros)

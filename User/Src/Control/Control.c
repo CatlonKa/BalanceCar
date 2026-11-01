@@ -96,7 +96,7 @@ void Control_Update(void)
         return;
     }
 
-    /* 安全联锁：姿态没标定完或车身不在直立窗口就一律不驱动。
+    /* 安全联锁：标定没完成或车已倒下（倾角 > 60°）就一律不驱动。
        标定期间 GetPitch() 恒 0，等于「完美直立」，接上就会恒定推力飞车。 */
     if (Attitude_IsCalibrating() || !Attitude_IsUpright())
     {
