@@ -4,8 +4,8 @@
 #include "Control.h"
 
 /* 直立环 PD：倾角误差 -> 推力 */
-#define PID_PITCH_KP        600.0f
-#define PID_PITCH_KD         12.0f
+#define PID_PITCH_KP        2000.0f
+#define PID_PITCH_KD         200.0f
 
 /* 速度环 PI：速度 -> 倾角给定，输出单位 rad */
 #define PID_SPEED_KP          0.001f
