@@ -6,7 +6,7 @@
 #include <stdbool.h>
 
 /* 全局使能默认值：0 = 上电静音，改这里或调 buzzer_set_enabled() */
-#define BUZZER_DEFAULT_ENABLED  0
+#define BUZZER_DEFAULT_ENABLED  1
 
 /* 使能标志：false 时 buzzer_on()/buzzer_startup_tone() 全部直接返回 */
 void buzzer_set_enabled(bool enable);

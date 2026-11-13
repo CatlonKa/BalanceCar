@@ -1,6 +1,6 @@
 #include "Control_PID.h"
 
-static float s_speed_int;
+static float s_speed_int;  // 速度环的积分项
 
 static float pid_clamp(float v, float lim)
 {
@@ -22,14 +22,14 @@ void Control_PID_Reset(void)
 
 void Control_PID_Step(const Control_Input *in, Control_Output *out)
 {
-    float pitch_set;
-    float thrust;
-    float steer;
+    float pitch_set;   //	目标倾角
+    float thrust;      //   直立控制量
+    float steer;       //   转向控制量
 
-    /* 速度环 PI：速度 -> 倾角给定 */
+    /* 速度环 PI：速度 -> 倾角给定；叠加机械中值 */
     s_speed_int += in->speed * PID_SPEED_KI * in->dt;
     s_speed_int = pid_clamp(s_speed_int, PID_SPEED_ILIM);
-    pitch_set = -(in->speed * PID_SPEED_KP + s_speed_int);
+    pitch_set = PID_PITCH_TRIM_RAD - (in->speed * PID_SPEED_KP + s_speed_int);
     pitch_set = pid_clamp(pitch_set, PID_PITCH_SET_LIMIT);
 
     /* 直立环 PD：倾角 -> 推力 */
