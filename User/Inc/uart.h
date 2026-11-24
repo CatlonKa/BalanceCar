@@ -4,6 +4,7 @@
 #include "main.h"
 #include "usart.h"
 
+#include <stdbool.h>
 #include <stdint.h>
 
 /*
@@ -24,6 +25,27 @@ void uart_send_byte(uint8_t byte);
 
 /** 发送 length 个字节的原始数据，可以带任意二进制内容。 */
 void uart_send(const uint8_t *data, uint16_t length);
+
+/**
+ * DMA 发送，立即返回，不占用 CPU。
+ *
+ * true = 已启动传输；false = 上一次还没发完（或参数无效），本帧被丢弃。
+ *
+ * ⚠️ 传输期间 DMA 仍在读 data，调用方在返回 true 后**不能改写这块内存**，
+ * 直到 HAL_UART_TxCpltCallback 到来。想用固定缓冲反复填，就用返回值做门控。
+ */
+bool uart_send_dma(const uint8_t *data, uint16_t length);
+
+/** uart_send_floats 一次最多发多少路 */
+#define UART_VOFA_MAX_CH    16U
+
+/**
+ * 按 VOFA+ JustFloat 格式发送 count 个 float：
+ * 每路 4 字节小端 + 帧尾 00 00 80 7F。
+ *
+ * DMA 发送，上一次没发完时丢弃本帧返回 false（不阻塞）。
+ */
+bool uart_send_floats(const float *values, uint16_t count);
 
 /** 发送一个以 '\0' 结尾的字符串（不含结尾的 '\0'）。 */
 void uart_send_string(const char *text);

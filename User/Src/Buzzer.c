@@ -59,6 +59,11 @@ bool buzzer_is_enabled(void)
     return s_enabled;
 }
 
+bool buzzer_is_busy(void)
+{
+    return s_phase < (uint8_t)BUZZER_TONE_STEPS;
+}
+
 void buzzer_startup_tone(void)
 {
     if (!s_enabled)

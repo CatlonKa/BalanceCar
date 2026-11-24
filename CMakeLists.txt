@@ -54,6 +54,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     User/Src/motor.c
     User/Src/Analog.c
     User/Src/Buzzer.c
+    User/Src/LightShow.c
     User/Src/Attitude.c
     User/Src/UIAttitude.c
     # User/Src/ImuTest.c   /* 临时测试模块，需要时取消注释 */
@@ -61,6 +62,13 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     # SEGGER RTT（J-Link 免引脚遥测）+ 本工程封装
     User/Src/RTT/SEGGER_RTT.c
     User/Src/Rtt.c
+
+    # 观测层：采集 + 按 MONITOR_OUT_* 分发到 UART / RTT / 无线
+    User/Src/Monitor.c
+
+    # 无线遥测：小帧组包，射频驱动 Nrf24 只管寄存器
+    User/Src/Telemetry.c
+    User/Src/Nrf24.c
 
     # Control（平衡控制：调度 + PID 串级 + LQR）
     User/Src/Control/Control.c

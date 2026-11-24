@@ -22,9 +22,13 @@
 
 static float s_pitch;             // rad，融合后的俯仰角，前倾为正
 static float s_pitch_rate;        // rad/s，陀螺扣零偏后的俯仰角速度
+static float s_yaw_rate;          // rad/s，陀螺扣零偏后的偏航角速度
+static float s_acc_tilt;          // rad，加计单独算的倾角，仅供遥测对比
 static float s_gyro_bias[3];      // LSB，标定得到的陀螺零偏，XYZ
 static bool s_gyro_calibrating;   // true = 标定未完成或失败，此时姿态输出恒 0
 static float s_yz_ratio;          // 重力在 Y-Z 平面的占比，0=完全侧躺，1=无侧倾
+static int16_t s_speed_prev;      // 上一拍的 speedL+speedR，用于微分
+static float s_lin_acc;           // 线加速度估计，(计数/2ms)/s，已低通
 
 /* 读一帧 12B：陀螺 XYZ + 加速度 XYZ，小端。
    标定期直接读 SPI：主循环刷屏时快照会重复，500 个样本里只有几十个不同值。 */
@@ -115,10 +119,14 @@ void Attitude_Init(void)
 {
     s_pitch = 0.0f;
     s_pitch_rate = 0.0f;
+    s_yaw_rate = 0.0f;
+    s_acc_tilt = 0.0f;
     s_yz_ratio = 0.0f;
     s_gyro_bias[0] = 0.0f;
     s_gyro_bias[1] = 0.0f;
     s_gyro_bias[2] = 0.0f;
+    s_speed_prev = (int16_t)(speedL + speedR);
+    s_lin_acc = 0.0f;
 
     /* 阻塞约 0.5 s。失败时标志保持 true，上层据此禁止驱动。 */
     s_gyro_calibrating = true;
@@ -158,6 +166,16 @@ float Attitude_GetPitchRate(void)
     return s_pitch_rate;
 }
 
+float Attitude_GetYawRate(void)
+{
+    return s_yaw_rate;
+}
+
+float Attitude_GetAccTilt(void)
+{
+    return s_acc_tilt;
+}
+
 void Attitude_Update(void)
 {
     float gyro[3];      //陀螺仪原始数据快照，LSB，未扣零偏
@@ -172,7 +190,10 @@ void Attitude_Update(void)
            提前返回也省掉本拍的 atan2f。 */
         s_pitch = 0.0f;
         s_pitch_rate = 0.0f;
-        return;
+        s_yaw_rate = 0.0f;
+        s_acc_tilt = 0.0f;        /* 标定结束后从当前速度重新起算，避免第一拍拿到巨大假加速度 */
+        s_speed_prev = (int16_t)(speedL + speedR);
+        s_lin_acc = 0.0f;        return;
     }
 
     gyro[0] = (float)imu_gyro[0];
@@ -182,9 +203,43 @@ void Attitude_Update(void)
     acc[1] = (float)imu_acc[1];
     acc[2] = (float)imu_acc[2];
 
+    /* 线加速度估计：编码器速度微分 + 一阶低通。
+       TIM6 以 500 Hz 刷新，1 kHz 采样下 dspeed 交替为 0/值，靠低通摊平。
+       静止时计数恒 0 → 估计精确为 0，不会误触门控。 */
+    {
+        const int16_t sum = (int16_t)(speedL + speedR);
+        const float dspeed = 0.5f * (float)(sum - s_speed_prev);
+
+        s_speed_prev = sum;
+        s_lin_acc += (dspeed / ATTITUDE_DT_S - s_lin_acc) * ATTITUDE_LIN_ACC_ALPHA;
+    }
+
     /* 绕 PITCH 轴的倾角：两轴 LSB 比值，量纲自动抵消，不需要 g */
-    acc_tilt = atan2f(acc[ATTITUDE_ACC_TILT_NUM_AXIS], acc[ATTITUDE_ACC_TILT_DEN_AXIS]) *
-               ATTITUDE_ACC_PITCH_SIGN;
+    {
+        float tilt_y = acc[ATTITUDE_ACC_TILT_NUM_AXIS];
+        float tilt_z = acc[ATTITUDE_ACC_TILT_DEN_AXIS];
+
+#if (ATTITUDE_LIN_ACC_ENABLE)
+        /* 把线性加速度从机体系投影里扣掉，θ 用上一拍 s_pitch */
+        {
+            float c = s_lin_acc * ATTITUDE_LIN_ACC_GAIN;
+
+            if (c > ATTITUDE_LIN_ACC_MAX_LSB)
+            {
+                c = ATTITUDE_LIN_ACC_MAX_LSB;
+            }
+            else if (c < -ATTITUDE_LIN_ACC_MAX_LSB)
+            {
+                c = -ATTITUDE_LIN_ACC_MAX_LSB;
+            }
+
+            tilt_y += c * cosf(s_pitch);
+            tilt_z -= c * sinf(s_pitch);
+        }
+#endif
+        acc_tilt = atan2f(tilt_y, tilt_z) * ATTITUDE_ACC_PITCH_SIGN;
+    }
+    s_acc_tilt = acc_tilt;
 
     /* 重力在倾角平面内的占比：侧躺时分子分母都趋 0，这个值也趋 0。
        没有它就无法区分「直立」与「侧躺」，因为两者 pitch 都是 0。
@@ -202,10 +257,16 @@ void Attitude_Update(void)
 
     s_pitch_rate = gyro_rate;
 
+    /* 偏航轴只扣零偏直接发布，不参与互补滤波：没有陀螺仪以外的偏航参考，
+       积分必然漂，所以这个量只能当迷态阻尼/速率反馈用。 */
+    s_yaw_rate = (gyro[ATTITUDE_GYRO_YAW_AXIS] - s_gyro_bias[ATTITUDE_GYRO_YAW_AXIS]) *
+                 ATTITUDE_GYRO_LSB_TO_RADS * ATTITUDE_GYRO_YAW_SIGN;
+
     /* 角度差先归一化到 ±π 再融合：在 ±180° 附近 acc_tilt 会跨符号
        （+180 与 -179 物理上只差 1°），直接相减会每拍扫掉好几度。 */
     {
         float diff = acc_tilt - s_pitch;
+        float alpha = ATTITUDE_ALPHA;
 
         if (diff > ATTITUDE_PI)
         {
@@ -215,7 +276,31 @@ void Attitude_Update(void)
         {
             diff += 2.0f * ATTITUDE_PI;
         }
-        s_pitch += ATTITUDE_ALPHA * gyro_rate * ATTITUDE_DT_S +
-                   (1.0f - ATTITUDE_ALPHA) * diff;
+
+#if (ATTITUDE_ACC_GATE_ENABLE)
+        /* 有线加速度就把权重交给陀螺：w 从 1 线性降到 0，
+           α_eff 单调有界于 [α,1]，最坏退化成纯陀螺积分 */
+        {
+            const float a_abs = fabsf(s_lin_acc);
+            float w;
+
+            if (a_abs <= ATTITUDE_ACC_GATE_A_LO)
+            {
+                w = 1.0f;
+            }
+            else if (a_abs >= ATTITUDE_ACC_GATE_A_HI)
+            {
+                w = 0.0f;
+            }
+            else
+            {
+                w = (ATTITUDE_ACC_GATE_A_HI - a_abs) /
+                    (ATTITUDE_ACC_GATE_A_HI - ATTITUDE_ACC_GATE_A_LO);
+            }
+            alpha = 1.0f - (1.0f - ATTITUDE_ALPHA) * w;
+        }
+#endif
+        s_pitch += alpha * gyro_rate * ATTITUDE_DT_S +
+                   (1.0f - alpha) * diff;
     }
 }

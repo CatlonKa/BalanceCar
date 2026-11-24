@@ -33,6 +33,42 @@ void uart_send(const uint8_t *data, uint16_t length)
                             UART_TX_TIMEOUT_MS);
 }
 
+bool uart_send_dma(const uint8_t *data, uint16_t length)
+{
+    if (data == NULL || length == 0U) {
+        return false;
+    }
+    /* 上一帧还没发完时 HAL 返回 HAL_BUSY，帧被丢弃 */
+    return HAL_UART_Transmit_DMA(&huart3, (uint8_t *)(uintptr_t)data, length) == HAL_OK;
+}
+
+/* JustFloat 组帧缓冲：发 DMA 期间不能重填，靠 uart_send_dma 的忙判据门控 */
+static uint8_t s_vofa_frame[UART_VOFA_MAX_CH * 4U + 4U];
+
+bool uart_send_floats(const float *values, uint16_t count)
+{
+    uint16_t i;
+    uint16_t len;
+
+    if (values == NULL || count == 0U || count > UART_VOFA_MAX_CH) {
+        return false;
+    }
+
+    /* Cortex-M4 小端 + IEEE754，与 JustFloat 的内存布局同构，直接拷贝 */
+    for (i = 0U; i < count; i++) {
+        memcpy(&s_vofa_frame[4U * i], &values[i], 4U);
+    }
+
+    /* 帧尾 = float NaN，正常数据里不会出现 */
+    len = (uint16_t)(count * 4U);
+    s_vofa_frame[len] = 0x00U;
+    s_vofa_frame[len + 1U] = 0x00U;
+    s_vofa_frame[len + 2U] = 0x80U;
+    s_vofa_frame[len + 3U] = 0x7FU;
+
+    return uart_send_dma(s_vofa_frame, (uint16_t)(len + 4U));
+}
+
 void uart_send_string(const char *text)
 {
     if (text == NULL) {

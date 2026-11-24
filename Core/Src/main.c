@@ -42,7 +42,8 @@
 #include "Analog.h"
 #include "Buzzer.h"
 #include "Control.h"
-#include "Rtt.h"
+#include "Monitor.h"
+#include "LightShow.h"
 
 
 /* USER CODE END Includes */
@@ -146,7 +147,8 @@ int main(void)
   buzzer_startup_tone();  /* 上电自检音：放标定之后，避免振动干扰零偏 */
   UIAttitude_Init();/* 界面姿态：只启用 DWT 周期计数，标定在进入姿态页时做 */
   Control_Init();  /* PID/LQR 控制器：只清零，参数在进入控制页时加载 */
-  Rtt_Init();      /* SEGGER RTT 遥测：ch0 文本、ch1 float 波形 */
+  Monitor_Init();  /* 观测层：按 MONITOR_OUT_* 打开各出口 */
+  LightShow_Init();/* 表演层：直立时自动循环灯光+旋律 */
 
   /* USER CODE END 2 */
 
@@ -163,8 +165,11 @@ int main(void)
     //IMU：中断只置标志，读在这里
     imu_service();
 
-    //RTT 遥测：内部限频，没到点立即返回
-    Rtt_Telemetry();
+    //观测：内部限频，没到点立即返回
+    Monitor_Update();
+
+    //表演：直立自动循环灯光秀+旋律，停车熄灭
+    LightShow_Update();
 
 
 

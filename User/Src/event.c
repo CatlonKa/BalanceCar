@@ -7,6 +7,8 @@
 int16_t speedL = 0;
 int16_t speedR = 0;
 
+volatile int32_t wheel_dist;
+
 uint8_t car_run = 1;
 volatile uint8_t car_state_changed = 0;
 
@@ -33,6 +35,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     {
         speedL = encoder_get_delta_left();
         speedR = encoder_get_delta_right();
+        wheel_dist += (int32_t)speedL;
     }
 
 

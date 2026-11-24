@@ -14,6 +14,9 @@ extern int16_t speedL;
 extern int16_t speedR;
 extern uint8_t car_run;
 
+// 左轮累计计数（前进为正），由 TIM6 累加；标定 k_x 用
+extern volatile int32_t wheel_dist;
+
 extern volatile uint8_t car_state_changed;
 
 // IMU 原始快照，主循环读（单位 LSB，顺序 X/Y/Z）

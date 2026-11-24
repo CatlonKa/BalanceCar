@@ -33,9 +33,6 @@
 
 void Rtt_Init(void);
 
-/* 每轮主循环调用一次；内部按 RTT_TELEMETRY_HZ 限频，没到点立即返回 */
-void Rtt_Telemetry(void);
-
 /* 往 ch0 发一段文本（不加换行）。传 NULL 或空串直接返回。 */
 void Rtt_SendText(const char *text);
 

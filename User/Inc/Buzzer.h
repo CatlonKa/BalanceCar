@@ -12,6 +12,9 @@
 void buzzer_set_enabled(bool enable);
 bool buzzer_is_enabled(void);
 
+/* 自检音序列是否还在播：表演旋律靠它让路 */
+bool buzzer_is_busy(void);
+
 void buzzer_init(void);
 void buzzer_on(uint16_t frequency, uint16_t volume);
 void buzzer_off(void);
